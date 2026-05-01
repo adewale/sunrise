@@ -53,8 +53,11 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('Review requested');
     expect(html).toContain('My PR · other repo');
     expect(html).toContain('Other person’s PR · my repo');
-    expect(html).toContain('Last checked');
+    expect(html).toContain('Checked');
     expect(html).toContain('30 Apr 2026, 00:00');
+    expect(html).toContain('class="settings-icon"');
+    expect(html).not.toContain('Inbox settings');
+    expect(html).not.toContain('<p class="eyebrow">Freshness</p>');
     expect(html).not.toContain('Last scan 2026-04-30T00:00:00Z');
     expect(html).toContain('<span>PRs</span><strong>3</strong>');
     expect(html).toContain('<span>Issues</span><strong>0</strong>');

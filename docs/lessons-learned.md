@@ -26,11 +26,11 @@ Why: using `panel` alone caused content to sit against the card edge because it 
 
 ## 2. The design page must reuse real components
 
-The public `/design` page exists to reveal drift. When possible, use shared render helpers such as:
+The public `/design` page exists to reveal drift. When possible, use shared render helpers or React components such as:
 
-- `renderMetric`
-- `renderItem`
-- `renderSetupGuide` patterns
+- metrics/stat components;
+- inbox row components;
+- setup checklist components.
 
 Avoid hand-writing lookalike markup. If a sample must be custom, it should still use the same structural classes as the production UI.
 
@@ -204,30 +204,13 @@ Cloudflare's Deploy to Cloudflare docs are directionally right, but several poin
 1. **Show a concrete before/after Wrangler example.**
    - Before template: placeholder D1 ID and default queue name.
    - After deploy fork: concrete D1 ID and user-selected queue name.
-
 2. **Explain where edited setup values are written.**
-   Users need to know that resource names chosen in the setup page are written into the newly-created fork, not the source repository and not the local machine.
-
 3. **Warn that queue names are account-level and single-consumer.**
-   A troubleshooting callout should say: if a build fails with “Queue already has a consumer,” choose a unique queue name or delete the existing consumer/queue.
-
 4. **Differentiate secrets from resources.**
-   The docs should explicitly say `.dev.vars.example` values configure secrets/env vars only. They do not rename D1 databases, Queues, or Workers.
-
 5. **Add a dogfooding/testing recipe.**
-   Recommended path for template authors:
-   - do not manually deploy with the same resource names;
-   - test deploy-button flow in a clean account or choose unique resource names;
-   - verify the forked repo contains rewritten Wrangler values.
-
 6. **Document how to edit an already-created deploy-button project.**
-   The practical answer is: edit the fork Cloudflare created, commit, and let Workers Builds redeploy. This should be prominent.
-
 7. **Clarify D1 placeholder expectations.**
-   The docs mention default values, but examples should show that template repos may use `<DATABASE_ID>` and that Cloudflare will replace it in the fork.
-
 8. **Surface queue consumer conflicts in the dashboard UI.**
-   The error should include suggested fixes and a link to the queue resource already consuming the queue.
 
 ## 16. An inbox should optimize skimming before categorization
 
@@ -301,3 +284,127 @@ A personal GitHub inbox needs both notification pagination and search-backed dis
 ```
 
 Dedupe by canonical subject key after combining sources. The UI should then present one reverse-chronological inbox, not one panel per API endpoint.
+
+## 21. Use the Hono/Inertia example as architecture, not just dependency proof
+
+Starting with `@hono/inertia` installed is not the same as building an Inertia app. The useful pattern from `yusukebe/hono-inertia-example` is structural:
+
+```txt
+app/server.ts       → Hono routes call c.render(page, props)
+app/root-view.tsx   → complete HTML shell
+app/ssr.tsx         → render Inertia page with React SSR
+app/client.tsx      → hydrateRoot/createInertiaApp
+app/pages/*.tsx     → page components
+app/pages.gen.ts    → generated page-name registry
+vite.config.ts      → inertiaPages + SSR/client build plugins
+```
+
+Sunrise first built string-rendered HTML and later migrated. That preserved Cloudflare/product correctness early, but it created extraction debt: routes, shell, page bodies, styles, and tiny client navigation all lived together in `src/app.ts` for too long.
+
+If starting over, begin with the example's file split even if the first pages are simple.
+
+## 22. React pages must own visible page bodies
+
+Placeholder page files satisfy type registration but do not reduce UI drift. The useful migration step is: each page component renders the visible body for that page.
+
+Good interim state:
+
+- Hono routes compute props.
+- `rootView` renders header/root shell.
+- React page components render page bodies.
+- Shared page components render stats, items, setup checks, and operations rows.
+
+Avoid passing a pre-rendered HTML blob through `dangerouslySetInnerHTML` except as a temporary bridge. It hides duplicated markup and prevents component tests from catching drift.
+
+## 23. Queue broker metrics and app-state metrics are different
+
+D1 can tell Sunrise how many `github_changes` are `pending`, `failed`, or `processed`. That is useful application state, but it is not Cloudflare Queue broker depth.
+
+For `/runs`, label the source:
+
+- `source: cloudflare` when Cloudflare API broker metrics are available;
+- `source: d1` when falling back to persisted app state.
+
+DLQ count needs Cloudflare API credentials or another explicit operational integration. Showing only a DLQ name is better than pretending to know its depth.
+
+## 24. Check runs, statuses, and reviews are complementary
+
+A PR can have legacy statuses, modern check runs, reviews, mergeability, and body/comment verification evidence. No single endpoint is enough.
+
+For authored PR enrichment, combine:
+
+```txt
+pull_request.url                     → mergeable / head sha
+pull_request.url + /reviews          → latest review state
+/repos/{repo}/commits/{sha}/statuses → legacy status contexts
+/repos/{repo}/commits/{sha}/check-runs → modern checks
+```
+
+Then classify failures conservatively:
+
+- failing/timed out/cancelled/action required → broken authored work;
+- pending/incomplete → waiting;
+- success without verification evidence → loop-closure risk.
+
+## 25. Repo-readiness checks should inspect semantics, not file presence
+
+Checking that `package.json` exists is not a verification check. The useful question is whether a human or agent can find one obvious command.
+
+Better first pass:
+
+- fetch and decode `package.json`;
+- inspect `scripts`;
+- accept `verify`, `test`, `check`, `build`, or `lint`;
+- later: inspect Makefile, justfile, taskfile, README, and CI config.
+
+## 26. Least-privilege OAuth should be the default, not the demo path
+
+The default OAuth scope should support public-data use and owner sign-in:
+
+```txt
+read:user user:email notifications
+```
+
+Private repository discovery is valuable but should be explicit opt-in:
+
+```txt
+read:user user:email notifications repo
+```
+
+Do not expose a broad `repo` prompt in Deploy to Cloudflare onboarding unless the user clearly asks for private repository coverage. Document endpoint-by-endpoint behavior under both scope sets.
+
+## 27. Fixture capture is not the same as manual labeling
+
+A capture script gives shape coverage; it does not prove classifier correctness. The spec's 50-candidate requirement needs human labels.
+
+Keep three assets separate:
+
+1. redacted raw endpoint payloads;
+2. normalized candidate fixtures;
+3. manual labels with `actionable`, `expectedPriority`, `expectedKind`, and notes.
+
+A template with 50 rows is useful, but it is still a to-do until a real owner labels real candidates.
+
+## 28. Query plans should be checked before performance hurts
+
+The reverse-chronological inbox query initially produced:
+
+```txt
+SCAN action_items
+USE TEMP B-TREE FOR ORDER BY
+```
+
+That was acceptable on tiny data but wrong as a default. Adding:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_action_items_updated_at
+  ON action_items(updated_at DESC);
+```
+
+changed the live plan to:
+
+```txt
+SCAN action_items USING INDEX idx_action_items_updated_at
+```
+
+Record query plans in docs while the schema is still small. It makes future regressions obvious.

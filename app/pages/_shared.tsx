@@ -18,6 +18,10 @@ export function Stat({ label, value }: { label: string; value: ReactNode }) {
   return <p className="stat"><span>{label}</span><strong>{value}</strong></p>;
 }
 
+export function UnresolvedLink({ row }: { row: { label: string; count: number; href: string; query?: string } }) {
+  return <a className="stat unresolved-link" href={row.href} target="_blank" rel="noreferrer" title={row.query ? `Opens GitHub: ${row.query}` : 'Opens GitHub'}><span>{row.label}</span><strong>{row.count} ↗</strong></a>;
+}
+
 export function SetupGuide({ setup }: { setup: any }) {
   const deployUrl = 'https://deploy.workers.cloudflare.com/?url=https://github.com/adewale/sunrise&paid=true';
   const dashboardPath = 'Workers & Pages → sunrise → Settings → Variables and Secrets';

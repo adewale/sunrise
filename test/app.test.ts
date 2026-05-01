@@ -78,6 +78,12 @@ describe('Sunrise app routes', () => {
     expect(html).not.toContain('Inbox settings');
     expect(html).not.toContain('<p class="eyebrow">Freshness</p>');
     expect(html).not.toContain('Last scan 2026-04-30T00:00:00Z');
+    expect(html).toContain('Unresolved on GitHub');
+    expect(html).toContain('href="https://github.com/pulls/review-requested" target="_blank" rel="noreferrer"');
+    expect(html).toContain('Open PRs in my repos');
+    expect(html).toContain('q=is%3Apr+is%3Aopen+user%3Aade+archived%3Afalse');
+    expect(html).toContain('My open PRs');
+    expect(html).toContain('↗');
     expect(html).toContain('<span>PRs</span><strong>3</strong>');
     expect(html).toContain('<span>Issues</span><strong>0</strong>');
     expect(html).toContain('<span>My PRs · elsewhere</span><strong>1</strong>');

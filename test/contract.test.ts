@@ -19,6 +19,7 @@ describe('route prop contracts', () => {
     expect(props).toMatchObject({ product: 'Sunrise', signedInAs: 'ade' });
     expect(props.items[0]).toMatchObject({ title: 'Review me', repo: 'o/r', suggestedAction: 'Review PR' });
     expect(props.counts).toMatchObject({ pullRequests: 1, issues: 0 });
+    expect(props.unresolvedLinks).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'review-requests', href: 'https://github.com/pulls/review-requested' })]));
     expect(props.pagination).toMatchObject({ page: 1, pageSize: 50, totalItems: 1 });
   });
 

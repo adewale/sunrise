@@ -15,6 +15,20 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('Setup checklist');
   });
 
+  it('renders dashboard as an inbox with marginal stats', async () => {
+    const db = createMemoryDb();
+    await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
+    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+      .bind('i1', 'k1', 'P0', 'review_requested', 'Review the launch PR', 'o/r', 'https://github.com/o/r/pull/1', '2026-04-30T00:00:00Z', 'You were requested for review.', 'Review PR', '{}', 'notifications').run();
+    const res = await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
+    const html = await res.text();
+    expect(html).toContain('class="dashboard-layout"');
+    expect(html).toContain('class="inbox panel"');
+    expect(html).toContain('GitHub inbox');
+    expect(html).toContain('class="marginalia"');
+    expect(html).toContain('Review the launch PR');
+  });
+
   it('returns dashboard JSON from the same props shape with <=20 default items and P3 collapsed', async () => {
     const db = createMemoryDb();
     await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();

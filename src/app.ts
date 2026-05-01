@@ -7,6 +7,8 @@ import { processGithubChange, runDiscovery } from './scanner';
 type Bindings = Env;
 const app = new Hono<{ Bindings: Bindings }>();
 
+app.get('/favicon.svg', (c) => new Response(renderFaviconSvg(), { headers: { 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': 'public, max-age=86400' } }));
+
 app.get('/', async (c) => {
   const session = await getSession(c.env.DB, c.req.header('Cookie') ?? null);
   if (session) return c.redirect('/dashboard');
@@ -475,7 +477,11 @@ function renderSetupChecks(checks: SetupCheck[]) {
 }
 
 function html(body: string, status = 200, headerExtra = '') {
-  return new Response(`<!doctype html><html><head><title>Sunrise</title><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,600..900,60,1&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet"><script>${themeScript()}</script><style>${designCss()}</style></head><body><a class="skip-link" href="#content">Skip to content</a><header class="site-header"><a class="brand" href="/">Sunrise</a>${headerExtra}<button class="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false" title="Toggle dark mode"><span class="sun-icon" aria-hidden="true"></span><span class="moon-icon" aria-hidden="true"></span></button></header><main id="content">${body}</main></body></html>`, { status, headers: { 'content-type': 'text/html; charset=utf-8' } });
+  return new Response(`<!doctype html><html><head><title>Sunrise</title><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,600..900,60,1&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet"><script>${themeScript()}</script><style>${designCss()}</style></head><body><a class="skip-link" href="#content">Skip to content</a><header class="site-header"><a class="brand" href="/">Sunrise</a>${headerExtra}<button class="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false" title="Toggle dark mode"><span class="sun-icon" aria-hidden="true"></span><span class="moon-icon" aria-hidden="true"></span></button></header><main id="content">${body}</main></body></html>`, { status, headers: { 'content-type': 'text/html; charset=utf-8' } });
+}
+
+function renderFaviconSvg() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-hidden="true"><title>Sunrise favicon</title><style>:root{color-scheme:light dark}.sky{fill:#fff4dc}.tray{fill:#fffaf0;stroke:#7b5a34;stroke-width:3}.sun{fill:#ffb23f}.ray{stroke:#c97814;stroke-width:3;stroke-linecap:round}.line{stroke:#7b5a34;stroke-width:3;stroke-linecap:round}.moon{fill:none;stroke:#7b5a34;stroke-width:3;opacity:.28}@media (prefers-color-scheme: dark){.sky{fill:#101824}.tray{fill:#172230;stroke:#dbe8fb}.sun{fill:none;stroke:#dbe8fb;stroke-width:3;opacity:.28}.ray{stroke:#dbe8fb;opacity:.22}.line{stroke:#dbe8fb}.moon{opacity:1;stroke:#dbe8fb;fill:#dbe8fb}}</style><rect class="sky" width="64" height="64" rx="16"/><path class="tray" d="M12 38h40l-4 12H16z"/><path class="line" d="M20 44h24"/><circle class="sun" cx="28" cy="31" r="11"/><path class="ray" d="M28 12v5M12 31h5M39 20l4-4M17 20l-4-4"/><path class="moon" d="M45 18a10 10 0 1 0 0 20 12 12 0 0 1 0-20z"/></svg>`;
 }
 
 function themeScript() {

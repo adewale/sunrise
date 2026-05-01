@@ -6,13 +6,23 @@ import { createMemoryDb } from './memory-db';
 describe('Sunrise app routes', () => {
   afterEach(() => vi.restoreAllMocks());
   const queue = { send: vi.fn(async () => undefined) } as unknown as Queue;
-  it('renders public landing with deploy CTA and setup checklist when signed out', async () => {
+  it('renders public landing with deploy CTA, setup checklist, and branded favicon', async () => {
     const env = { DB: createMemoryDb(), GITHUB_CLIENT_ID: '', OWNER_LOGIN: 'ade', SESSION_SECRET: 'x' } as unknown as Env;
     const res = await app.request('/', {}, env);
     const html = await res.text();
     expect(html).toContain('Sunrise');
     expect(html).toContain('Deploy your own');
     expect(html).toContain('Setup checklist');
+    expect(html).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg">');
+  });
+
+  it('serves a sunrise inbox favicon with light and dark variants', async () => {
+    const res = await app.request('/favicon.svg', {}, { DB: createMemoryDb() } as unknown as Env);
+    const svg = await res.text();
+    expect(res.headers.get('content-type')).toContain('image/svg+xml');
+    expect(svg).toContain('<title>Sunrise favicon</title>');
+    expect(svg).toContain('prefers-color-scheme: dark');
+    expect(svg).toContain('aria-hidden');
   });
 
   it('renders dashboard as an inbox with marginal stats', async () => {

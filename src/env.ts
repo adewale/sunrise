@@ -7,5 +7,9 @@ export type Env = Cloudflare.Env & {
   OWNER_LOGIN?: string;
   SESSION_SECRET?: string;
   GITHUB_OAUTH_SCOPES?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_API_TOKEN?: string;
+  GITHUB_QUEUE_NAME?: string;
+  GITHUB_QUEUE_DLQ_NAME?: string;
   TEST_GITHUB_FIXTURES?: string;
 };

@@ -1,11 +1,28 @@
 import { Hono } from 'hono';
 import { inertia, serializePage, type PageObject } from '@hono/inertia';
+import { createElement, type ComponentType } from 'react';
+import { renderToString } from 'react-dom/server';
+import DashboardPage from '../app/pages/Dashboard';
+import DesignPage from '../app/pages/Design';
+import LandingPage from '../app/pages/Landing';
+import RunsPage from '../app/pages/Runs';
+import SettingsPage from '../app/pages/Settings';
+import SetupPage from '../app/pages/Setup';
 import type { Env } from './env';
 import { clearSessionCookie, getSession, retryD1, sessionCookie } from './db';
 import type { GitHubActionItem } from './types';
 import { processGithubChange, runDiscovery } from './scanner';
 
 type Bindings = Env;
+type SunrisePageProps = Record<string, unknown> & { __sunriseHtml?: string };
+const pageComponents: Record<string, ComponentType<SunrisePageProps>> = {
+  Dashboard: DashboardPage,
+  Design: DesignPage,
+  Landing: LandingPage,
+  Runs: RunsPage,
+  Settings: SettingsPage,
+  Setup: SetupPage,
+};
 const app = new Hono<{ Bindings: Bindings }>();
 
 app.use(inertia({ version: 'sunrise-1', rootView: renderInertiaRoot }));
@@ -164,13 +181,33 @@ async function runsProps(env: Env) {
     runs,
     freshness: { lastScanAt: lastRun?.completed_at ?? lastRun?.started_at ?? null, status: scanStatus(lastRun) },
     rateLimit: rate ? { resource: rate.resource, remaining: rate.remaining, resetAt: rate.reset_at, capturedAt: rate.captured_at } : null,
-    queue: { pending, failed, processed, dlq: 'sunrise-github-dlq', maxBatchSize: 10, maxBatchTimeout: 30, maxRetries: 3 },
+    queue: await queueStats(env, { pending, failed, processed, dlq: 'sunrise-github-dlq', maxBatchSize: 10, maxBatchTimeout: 30, maxRetries: 3 }),
   };
 }
 
 async function countRows(db: D1Database, sql: string) {
   const row = await db.prepare(sql).first<Record<string, number>>();
   return Number(row?.count ?? 0);
+}
+
+async function queueStats(env: Env, fallback: any) {
+  const accountId = env.CLOUDFLARE_ACCOUNT_ID;
+  const token = env.CLOUDFLARE_API_TOKEN;
+  if (!accountId || !token) return { ...fallback, source: 'd1' };
+  const queueName = env.GITHUB_QUEUE_NAME || 'sunrise-github';
+  const dlqName = env.GITHUB_QUEUE_DLQ_NAME || fallback.dlq;
+  const [queue, dlq] = await Promise.all([cloudflareQueueDepth(accountId, token, queueName), cloudflareQueueDepth(accountId, token, dlqName)]);
+  return { ...fallback, brokerPending: queue ?? null, dlqCount: dlq ?? null, source: queue == null && dlq == null ? 'd1' : 'cloudflare' };
+}
+
+async function cloudflareQueueDepth(accountId: string, token: string, queueName: string) {
+  try {
+    const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/queues/${encodeURIComponent(queueName)}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+    if (!res.ok) return null;
+    const json = await res.json<any>();
+    const q = json.result ?? json;
+    return Number(q.messages ?? q.backlog ?? q.message_count ?? q.pending_messages ?? q.depth ?? 0);
+  } catch { return null; }
 }
 
 async function dashboardProps(env: Env, login: string, page = 1) {
@@ -403,7 +440,9 @@ function scanStatus(run: Record<string, any> | null) {
 
 function renderInertiaRoot(page: PageObject) {
   const rendered = renderInertiaPage(page);
-  return documentHtml(rendered.body, rendered.headerExtra, `<script data-page="app" type="application/json">${serializePage(page)}</script>`);
+  const Component = pageComponents[page.component];
+  const body = Component ? renderToString(createElement(Component, { ...(page.props as Record<string, unknown>), __sunriseHtml: rendered.body })) : rendered.body;
+  return documentHtml(body, rendered.headerExtra, `<script data-page="app" type="application/json">${serializePage(page)}</script>`);
 }
 
 function renderInertiaPage(page: PageObject) {
@@ -449,7 +488,7 @@ function renderRuns(props: any) {
   const freshness = props.freshness;
   const rate = props.rateLimit;
   const queue = props.queue;
-  return `<section class="section panel"><p class="eyebrow">Operations</p><h1>Runs</h1><div class="stat-list">${freshness ? renderStat('Freshness', 0).replace('<strong>0</strong>', `<strong>${escapeHtml(capitalize(freshness.status))}</strong>`) : ''}${freshness ? `<p class="stat"><span>Last checked</span><strong>${escapeHtml(formatDateTime(freshness.lastScanAt))}</strong></p>` : ''}${rate ? `<p class="stat"><span>Rate limit</span><strong>${rate.remaining}</strong></p><p class="stat"><span>Rate reset</span><strong>${escapeHtml(formatDateTime(rate.resetAt))}</strong></p>` : '<p class="stat"><span>Rate limit</span><strong>not yet</strong></p>'}${queue ? `<p class="stat"><span>Queue backlog</span><strong>${queue.pending}</strong></p><p class="stat"><span>Queue failed</span><strong>${queue.failed}</strong></p><p class="stat"><span>DLQ</span><strong>${escapeHtml(queue.dlq)}</strong></p>` : ''}</div><table><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Candidates</th><th>Processed</th><th>Error</th></tr></thead><tbody>${runs.map((r: any) => `<tr><td>${escapeHtml(formatDateTime(r.started_at))}</td><td>${r.trigger}</td><td><span class="badge">${r.status}</span></td><td>${r.candidate_count}</td><td>${r.processed_count ?? 0}</td><td>${escapeHtml(r.error ?? '')}</td></tr>`).join('')}</tbody></table></section>`;
+  return `<section class="section panel"><p class="eyebrow">Operations</p><h1>Runs</h1><div class="stat-list">${freshness ? renderStat('Freshness', 0).replace('<strong>0</strong>', `<strong>${escapeHtml(capitalize(freshness.status))}</strong>`) : ''}${freshness ? `<p class="stat"><span>Last checked</span><strong>${escapeHtml(formatDateTime(freshness.lastScanAt))}</strong></p>` : ''}${rate ? `<p class="stat"><span>Rate limit</span><strong>${rate.remaining}</strong></p><p class="stat"><span>Rate reset</span><strong>${escapeHtml(formatDateTime(rate.resetAt))}</strong></p>` : '<p class="stat"><span>Rate limit</span><strong>not yet</strong></p>'}${queue ? `<p class="stat"><span>Queue backlog</span><strong>${queue.brokerPending ?? queue.pending}</strong></p><p class="stat"><span>Queue source</span><strong>${escapeHtml(queue.source ?? 'd1')}</strong></p><p class="stat"><span>Queue failed</span><strong>${queue.failed}</strong></p><p class="stat"><span>DLQ</span><strong>${escapeHtml(queue.dlq)}</strong></p><p class="stat"><span>DLQ count</span><strong>${queue.dlqCount ?? 'unknown'}</strong></p>` : ''}</div><table><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Candidates</th><th>Processed</th><th>Error</th></tr></thead><tbody>${runs.map((r: any) => `<tr><td>${escapeHtml(formatDateTime(r.started_at))}</td><td>${r.trigger}</td><td><span class="badge">${r.status}</span></td><td>${r.candidate_count}</td><td>${r.processed_count ?? 0}</td><td>${escapeHtml(r.error ?? '')}</td></tr>`).join('')}</tbody></table></section>`;
 }
 
 function renderDashboard(props: any) {

@@ -152,9 +152,10 @@ async function enrichPullRequests(headers: Record<string, string>, prs: any[], o
       const pr = await fetchJson<any>(item.pull_request.url, headers);
       const reviews = await safeFetchPaginated<any>(`${item.pull_request.url}/reviews?per_page=100`, headers, 'PR reviews', 1);
       const statuses = pr.statuses_url ? await safeFetchPaginated<any>(pr.statuses_url, headers, 'PR statuses', 1) : [];
+      const checkRuns = pr.head?.repo?.full_name && pr.head?.sha ? await safeFetchPaginated<any>(`https://api.github.com/repos/${pr.head.repo.full_name}/commits/${pr.head.sha}/check-runs?per_page=100`, { ...headers, Accept: 'application/vnd.github+json' }, 'PR check runs', 1) : [];
       const latestReviewState = reviews.at(-1)?.state;
-      const checks = statuses.some((s) => ['failure', 'error'].includes(String(s.state))) ? 'failure' : statuses.some((s) => String(s.state) === 'pending') ? 'pending' : statuses.length ? 'success' : item.checks;
-      return { ...item, mergeable: pr.mergeable === false || pr.mergeable_state === 'dirty' ? 'conflicting' : pr.mergeable === true ? 'mergeable' : 'unknown', checks, latestReviewState, hasVerificationSummary: hasVerificationText(`${item.body ?? ''}\n${pr.body ?? ''}`), user: item.user ?? { login: ownerLogin } };
+      const checks = checkRuns.some((r) => ['failure', 'timed_out', 'cancelled', 'action_required'].includes(String(r.conclusion))) || statuses.some((s) => ['failure', 'error'].includes(String(s.state))) ? 'failure' : checkRuns.some((r) => !r.conclusion || String(r.status) !== 'completed') || statuses.some((s) => String(s.state) === 'pending') ? 'pending' : checkRuns.length || statuses.length ? 'success' : item.checks;
+      return { ...item, mergeable: pr.mergeable === false || pr.mergeable_state === 'dirty' ? 'conflicting' : pr.mergeable === true ? 'mergeable' : 'unknown', checks, checkRunCount: checkRuns.length, latestReviewState, hasVerificationSummary: hasVerificationText(`${item.body ?? ''}\n${pr.body ?? ''}`), user: item.user ?? { login: ownerLogin } };
     } catch { return item; }
   }));
 }
@@ -166,7 +167,7 @@ async function discoverRepoReadiness(runId: string, headers: Record<string, stri
     if (!fullName || String(repo.owner?.login ?? '').toLowerCase() !== ownerLogin.toLowerCase()) continue;
     const [agents, packageJson, reality] = await Promise.all([
       contentExists(headers, fullName, 'AGENTS.md'),
-      contentExists(headers, fullName, 'package.json'),
+      hasVerifyCommand(headers, fullName),
       contentExists(headers, fullName, 'reality.manifest.md'),
     ]);
     const pushed = String(repo.pushed_at ?? repo.updated_at ?? new Date().toISOString());
@@ -199,6 +200,16 @@ async function discoverRepoAlerts(runId: string, headers: Record<string, string>
 async function contentExists(headers: Record<string, string>, repo: string, path: string) {
   const res = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, { headers });
   return res.ok;
+}
+
+async function hasVerifyCommand(headers: Record<string, string>, repo: string) {
+  try {
+    const json = await fetchJson<any>(`https://api.github.com/repos/${repo}/contents/package.json`, headers);
+    const decoded = atob(String(json.content ?? '').replace(/\s/g, ''));
+    const pkg = JSON.parse(decoded);
+    const scripts = pkg.scripts ?? {};
+    return Boolean(scripts.verify || scripts.test || scripts.check || scripts.build || scripts.lint);
+  } catch { return false; }
 }
 
 async function fetchJson<T>(url: string, headers: Record<string, string>): Promise<T> {

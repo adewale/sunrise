@@ -1,0 +1,452 @@
+[
+  {
+    "candidateId": "candidate-001",
+    "source": "notifications",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-002",
+    "source": "search/review-requests",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-003",
+    "source": "search/assigned",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-004",
+    "source": "search/authored-prs",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-005",
+    "source": "search/created-issues",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-006",
+    "source": "search/involved",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-007",
+    "source": "search/discussions",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-008",
+    "source": "actions/workflow-failure",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-009",
+    "source": "security/dependabot",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-010",
+    "source": "contents/repo-readiness",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-011",
+    "source": "notifications",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-012",
+    "source": "search/review-requests",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-013",
+    "source": "search/assigned",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-014",
+    "source": "search/authored-prs",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-015",
+    "source": "search/created-issues",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-016",
+    "source": "search/involved",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-017",
+    "source": "search/discussions",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-018",
+    "source": "actions/workflow-failure",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-019",
+    "source": "security/dependabot",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-020",
+    "source": "contents/repo-readiness",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-021",
+    "source": "notifications",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-022",
+    "source": "search/review-requests",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-023",
+    "source": "search/assigned",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-024",
+    "source": "search/authored-prs",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-025",
+    "source": "search/created-issues",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-026",
+    "source": "search/involved",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-027",
+    "source": "search/discussions",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-028",
+    "source": "actions/workflow-failure",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-029",
+    "source": "security/dependabot",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-030",
+    "source": "contents/repo-readiness",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-031",
+    "source": "notifications",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-032",
+    "source": "search/review-requests",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-033",
+    "source": "search/assigned",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-034",
+    "source": "search/authored-prs",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-035",
+    "source": "search/created-issues",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-036",
+    "source": "search/involved",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-037",
+    "source": "search/discussions",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-038",
+    "source": "actions/workflow-failure",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-039",
+    "source": "security/dependabot",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-040",
+    "source": "contents/repo-readiness",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-041",
+    "source": "notifications",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-042",
+    "source": "search/review-requests",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-043",
+    "source": "search/assigned",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-044",
+    "source": "search/authored-prs",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-045",
+    "source": "search/created-issues",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-046",
+    "source": "search/involved",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-047",
+    "source": "search/discussions",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-048",
+    "source": "actions/workflow-failure",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-049",
+    "source": "security/dependabot",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  },
+  {
+    "candidateId": "candidate-050",
+    "source": "contents/repo-readiness",
+    "url": "",
+    "actionable": null,
+    "expectedPriority": null,
+    "expectedKind": null,
+    "notes": ""
+  }
+]

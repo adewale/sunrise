@@ -51,19 +51,35 @@ describe('Sunrise app routes', () => {
     expect(html).not.toContain('Recent signal');
   });
 
-  it('returns dashboard JSON from the same props shape with <=20 default items and P3 collapsed', async () => {
+  it('returns paginated dashboard JSON with configurable 50 item default', async () => {
     const db = createMemoryDb();
     await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < 55; i++) {
       await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
-        .bind(`i${i}`, `k${i}`, i < 2 ? 'P0' : 'P3', 'notification', `Item ${i}`, 'o/r', 'https://github.com/o/r/issues/1', '2026-04-30T00:00:00Z', 'Reason', 'Do it', '{}', 'notifications').run();
+        .bind(`i${i}`, `k${i}`, i < 2 ? 'P0' : 'P3', 'notification', `Item ${i}`, 'o/r', 'https://github.com/o/r/issues/1', `2026-04-${String(30 - Math.floor(i / 24)).padStart(2, '0')}T${String(23 - (i % 24)).padStart(2, '0')}:00:00Z`, 'Reason', 'Do it', '{}', 'notifications').run();
     }
     const res = await app.request('/dashboard?json', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
     expect(res.status).toBe(200);
     const props = await res.json() as any;
-    expect(props.items.length).toBeLessThanOrEqual(20);
+    expect(props.items.length).toBe(50);
+    expect(props.pagination).toMatchObject({ page: 1, pageSize: 50, totalItems: 55, totalPages: 2, hasNext: true });
     expect(props.items.map((item: any) => item.title).slice(0, 2)).toEqual(['Item 0', 'Item 1']);
     expect(props.items.every((item: any) => item.suggestedAction)).toBe(true);
+
+    const page2 = await app.request('/dashboard?json&page=2', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
+    const page2Props = await page2.json() as any;
+    expect(page2Props.items.length).toBe(5);
+  });
+
+  it('lets the owner change inbox page size in settings', async () => {
+    const db = createMemoryDb();
+    await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
+    const get = await app.request('/settings', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
+    expect(await get.text()).toContain('Inbox page size');
+    const post = await app.request('/settings', { method: 'POST', headers: { Cookie: 'sunrise_session=sid', 'content-type': 'application/x-www-form-urlencoded' }, body: 'inboxPageSize=25' }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
+    expect(post.status).toBe(302);
+    const row = await db.prepare("SELECT value FROM settings WHERE key = 'inbox_page_size'").first<Record<string, string>>();
+    expect(row?.value).toBe('25');
   });
 
   it('renders public design language without authentication', async () => {

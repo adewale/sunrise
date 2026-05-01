@@ -40,12 +40,12 @@ function execute(store: Record<string, Row[]>, sql: string, v: any[]) {
 
 function select(store: Record<string, Row[]>, sql: string, v: any[]) {
   const normalized = sql.replace(/\s+/g, ' ').trim();
-  if (/FROM settings/i.test(normalized)) return store.settings.filter((r) => normalized.includes("oauth_last_error") ? r.key === 'oauth_last_error' : (!v[0] || r.key === v[0]));
+  if (/FROM settings/i.test(normalized)) return store.settings.filter((r) => normalized.includes("oauth_last_error") ? r.key === 'oauth_last_error' : normalized.includes("inbox_page_size") ? r.key === 'inbox_page_size' : (!v[0] || r.key === v[0]));
   if (/FROM sessions/i.test(normalized)) return store.sessions.filter((r) => !v[0] || r.id === v[0]);
   if (/FROM oauth_states/i.test(normalized)) return v.length ? store.oauth_states.filter((r) => r.state === v[0]) : store.oauth_states;
   if (/FROM scan_runs/i.test(normalized)) return [...store.scan_runs].sort(desc('started_at')).slice(0, normalized.includes('LIMIT 1') ? 1 : 10);
   if (/FROM rate_limit_snapshots/i.test(normalized)) return [...store.rate_limit_snapshots].sort(desc('captured_at')).slice(0, 1);
-  if (/FROM action_items/i.test(normalized)) return [...store.action_items].filter((r) => r.ignored_at == null).sort((a,b) => String(a.priority).localeCompare(String(b.priority)) || Date.parse(b.updated_at)-Date.parse(a.updated_at)).slice(0, 50);
+  if (/FROM action_items/i.test(normalized)) return [...store.action_items].filter((r) => r.ignored_at == null).sort((a,b) => String(a.priority).localeCompare(String(b.priority)) || Date.parse(b.updated_at)-Date.parse(a.updated_at)).slice(0, normalized.includes('LIMIT 500') ? 500 : 50);
   if (/FROM github_changes/i.test(normalized)) return store.github_changes.filter((r) => !v[0] || r.id === v[0]);
   if (/FROM ignored_items/i.test(normalized)) return store.ignored_items.filter((r) => r.canonical_subject_key === v[0]);
   throw new Error(`Unsupported SQL select: ${sql}`);

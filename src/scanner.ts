@@ -67,21 +67,23 @@ export async function processGithubChange(env: Env, msg: ProcessGitHubChangeMess
 
 async function discoverFromGitHub(runId: string, token: string, ownerLogin: string): Promise<GitHubChange[]> {
   const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'sunrise-dashboard' };
-  const [notifications, reviewRequests, assigned, authoredPrs, authoredIssues, involved] = await Promise.all([
+  const [notifications, reviewRequests, assigned, authoredPrs, authoredIssues, ownedRepoPrs, involved] = await Promise.all([
     fetchPaginated<any>('https://api.github.com/notifications?all=false&per_page=100', headers, 'GitHub notifications'),
     searchIssues(headers, 'search/review-requests', `is:pr is:open review-requested:${ownerLogin} archived:false`),
     searchIssues(headers, 'search/assigned', `is:open assignee:${ownerLogin} archived:false`),
     searchIssues(headers, 'search/authored-prs', `is:pr is:open author:${ownerLogin} archived:false`),
     searchIssues(headers, 'search/created-issues', `is:issue is:open author:${ownerLogin} archived:false`),
+    searchIssues(headers, 'search/owned-repo-prs', `is:pr is:open user:${ownerLogin} -author:${ownerLogin} archived:false`),
     searchIssues(headers, 'search/involved', `is:open involves:${ownerLogin} archived:false`),
   ]);
   return dedupeChanges([
     ...notifications.map((n) => notificationToChange(runId, n)),
-    ...reviewRequests.map((i) => issueSearchToChange(runId, i, 'search/review-requests', 'review_requested')),
-    ...assigned.map((i) => issueSearchToChange(runId, i, 'search/assigned', 'assign')),
-    ...authoredPrs.map((i) => issueSearchToChange(runId, i, 'search/authored-prs', 'author')),
-    ...authoredIssues.map((i) => issueSearchToChange(runId, i, 'search/created-issues', 'author')),
-    ...involved.map((i) => issueSearchToChange(runId, i, 'search/involved', 'comment')),
+    ...reviewRequests.map((i) => issueSearchToChange(runId, i, 'search/review-requests', 'review_requested', ownerLogin)),
+    ...assigned.map((i) => issueSearchToChange(runId, i, 'search/assigned', 'assign', ownerLogin)),
+    ...authoredPrs.map((i) => issueSearchToChange(runId, i, 'search/authored-prs', 'author', ownerLogin)),
+    ...authoredIssues.map((i) => issueSearchToChange(runId, i, 'search/created-issues', 'author', ownerLogin)),
+    ...ownedRepoPrs.map((i) => issueSearchToChange(runId, i, 'search/owned-repo-prs', 'repo_pr', ownerLogin)),
+    ...involved.map((i) => issueSearchToChange(runId, i, 'search/involved', 'comment', ownerLogin)),
   ]);
 }
 
@@ -121,19 +123,22 @@ function notificationToChange(runId: string, n: any): GitHubChange {
   };
 }
 
-function issueSearchToChange(runId: string, item: any, endpoint: string, reason: string): GitHubChange {
+function issueSearchToChange(runId: string, item: any, endpoint: string, reason: string, ownerLogin: string): GitHubChange {
   const isPr = Boolean(item.pull_request);
+  const repo = String(item.repository_url ?? '').replace('https://api.github.com/repos/', '');
+  const repoOwner = repo.split('/')[0] ?? '';
+  const author = String(item.user?.login ?? '');
   return {
     id: crypto.randomUUID(),
     runId,
     canonicalSubjectKey: String(item.html_url ?? item.url ?? item.id).replace('https://github.com/', 'github:'),
     sourceEndpoint: endpoint,
-    repo: String(item.repository_url ?? '').replace('https://api.github.com/repos/', ''),
+    repo,
     subjectType: isPr ? 'PullRequest' : 'Issue',
     subjectUrl: item.url,
     htmlUrl: item.html_url,
     updatedAt: item.updated_at ?? item.created_at ?? new Date().toISOString(),
-    raw: { reason, title: item.title, author: item.user?.login, checks: isPr ? 'pending' : undefined, comments: item.comments, state: item.state },
+    raw: { reason, title: item.title, author, repoOwner, isOwnRepo: repoOwner.toLowerCase() === ownerLogin.toLowerCase(), isAuthored: author.toLowerCase() === ownerLogin.toLowerCase(), checks: isPr ? 'pending' : undefined, comments: item.comments, state: item.state },
   };
 }
 
@@ -141,9 +146,19 @@ function dedupeChanges(changes: GitHubChange[]): GitHubChange[] {
   const byKey = new Map<string, GitHubChange>();
   for (const change of changes) {
     const existing = byKey.get(change.canonicalSubjectKey);
-    if (!existing || Date.parse(change.updatedAt) > Date.parse(existing.updatedAt)) byKey.set(change.canonicalSubjectKey, change);
+    if (!existing || changeSpecificity(change) > changeSpecificity(existing) || (changeSpecificity(change) === changeSpecificity(existing) && Date.parse(change.updatedAt) > Date.parse(existing.updatedAt))) byKey.set(change.canonicalSubjectKey, change);
   }
   return [...byKey.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+}
+
+function changeSpecificity(change: GitHubChange): number {
+  if (change.sourceEndpoint.includes('owned-repo-prs')) return 5;
+  if (change.sourceEndpoint.includes('authored-prs')) return 5;
+  if (change.sourceEndpoint.includes('review-requests')) return 4;
+  if (change.sourceEndpoint.includes('assigned')) return 4;
+  if (change.sourceEndpoint.includes('created-issues')) return 4;
+  if (change.sourceEndpoint.includes('involved')) return 2;
+  return 1;
 }
 
 function canonicalKey(n: any): string {

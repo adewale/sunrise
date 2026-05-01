@@ -17,6 +17,7 @@ export type ActionKind =
   | 'commit_velocity_warning'
   | 'invitation'
   | 'security_alert'
+  | 'repo_pr'
   | 'notification'
   | 'maintenance';
 
@@ -43,6 +44,10 @@ export type GitHubActionItem = {
     recentCommitCount?: number;
     recentFixCommitCount?: number;
     activeRepoCount?: number;
+    author?: string;
+    repoOwner?: string;
+    isOwnRepo?: boolean;
+    isAuthored?: boolean;
   };
   source: ActionSource;
 };

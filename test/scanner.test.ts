@@ -23,6 +23,7 @@ describe('GitHub discovery', () => {
         const query = decodeURIComponent(new URL(u).searchParams.get('q') ?? '');
         if (query.includes('review-requested:ade')) return search([issue('Review me', 'https://github.com/o/r/pull/3', '2026-05-01T12:00:00Z', 'teammate')]);
         if (query.includes('assignee:ade')) return search([issue('Assigned issue', 'https://github.com/o/r/issues/4', '2026-05-01T11:00:00Z', 'teammate')]);
+        if (query.includes('user:ade') && query.includes('-author:ade')) return search([issue('External PR to my repo', 'https://github.com/ade/r/pull/8', '2026-05-01T06:30:00Z', 'teammate')]);
         if (query.includes('is:pr') && query.includes('author:ade')) return search([issue('Authored PR', 'https://github.com/o/r/pull/5', '2026-05-01T08:00:00Z', 'ade')]);
         if (query.includes('is:issue') && query.includes('author:ade')) return search([issue('Authored issue', 'https://github.com/o/r/issues/6', '2026-05-01T07:00:00Z', 'ade')]);
         if (query.includes('involves:ade')) return search([issue('Active discussion', 'https://github.com/o/r/issues/7', '2026-05-01T06:00:00Z', 'teammate')]);
@@ -33,7 +34,7 @@ describe('GitHub discovery', () => {
     const db = createMemoryDb();
     const result = await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
 
-    expect(result.candidateCount).toBe(7);
+    expect(result.candidateCount).toBe(8);
     const changes = await db.prepare('SELECT * FROM github_changes').all<Record<string, any>>();
     expect(changes.results.map((row) => row.source_endpoint)).toEqual(expect.arrayContaining([
       'notifications',
@@ -41,6 +42,7 @@ describe('GitHub discovery', () => {
       'search/assigned',
       'search/authored-prs',
       'search/created-issues',
+      'search/owned-repo-prs',
       'search/involved',
     ]));
     const items = await db.prepare('SELECT * FROM action_items').all<Record<string, any>>();
@@ -50,6 +52,7 @@ describe('GitHub discovery', () => {
       'assigned',
       'authored_pr_pending',
       'maintenance',
+      'repo_pr',
       'notification',
     ]));
   });

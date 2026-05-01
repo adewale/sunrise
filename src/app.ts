@@ -135,8 +135,9 @@ app.post('/__debug/reprocess/:changeId', async (c) => {
 });
 
 async function dashboardProps(env: Env, login: string) {
-  const rows = await env.DB.prepare('SELECT * FROM action_items WHERE ignored_at IS NULL ORDER BY updated_at DESC LIMIT 50').all<Record<string, any>>();
-  const items = rows.results.map(rowToItem).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)).slice(0, 20);
+  const rows = await env.DB.prepare('SELECT * FROM action_items WHERE ignored_at IS NULL ORDER BY updated_at DESC LIMIT 100').all<Record<string, any>>();
+  const allItems = rows.results.map(rowToItem).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  const items = allItems.slice(0, 20);
   const lastRun = await env.DB.prepare('SELECT * FROM scan_runs ORDER BY started_at DESC LIMIT 1').first<Record<string, any>>();
   const rate = await env.DB.prepare('SELECT * FROM rate_limit_snapshots ORDER BY captured_at DESC LIMIT 1').first<Record<string, any>>();
   return {
@@ -145,13 +146,16 @@ async function dashboardProps(env: Env, login: string) {
     freshness: { lastScanAt: lastRun?.completed_at ?? lastRun?.started_at ?? null, status: scanStatus(lastRun) },
     rateLimit: rate ? { remaining: rate.remaining, resetAt: rate.reset_at } : null,
     counts: {
-      assigned: items.filter((i) => i.kind === 'assigned').length,
-      mentioned: items.filter((i) => i.kind === 'mention').length,
-      createdIssuesNeedingResponse: items.filter((i) => i.kind === 'maintenance').length,
-      pullRequests: items.filter(isPullRequestItem).length,
-      issues: items.filter(isIssueItem).length,
-      authoredOpenPrs: items.filter((i) => i.kind.startsWith('authored_pr') || i.kind === 'stale_green_pr').length,
-      reviewRequests: items.filter((i) => i.kind === 'review_requested').length,
+      assigned: allItems.filter((i) => i.kind === 'assigned').length,
+      mentioned: allItems.filter((i) => i.kind === 'mention').length,
+      createdIssuesNeedingResponse: allItems.filter((i) => i.kind === 'maintenance').length,
+      pullRequests: allItems.filter(isPullRequestItem).length,
+      issues: allItems.filter(isIssueItem).length,
+      myPrsOwnRepos: allItems.filter((i) => isAuthoredPrItem(i) && i.evidence?.isOwnRepo === true).length,
+      myPrsOtherRepos: allItems.filter((i) => isAuthoredPrItem(i) && i.evidence?.isOwnRepo !== true).length,
+      prsInMyRepos: allItems.filter((i) => i.kind === 'repo_pr').length,
+      authoredOpenPrs: allItems.filter(isAuthoredPrItem).length,
+      reviewRequests: allItems.filter((i) => i.kind === 'review_requested').length,
     },
     items,
     usingFixtures: env.TEST_GITHUB_FIXTURES === 'true',
@@ -163,11 +167,15 @@ function rowToItem(row: Record<string, any>): GitHubActionItem {
 }
 
 function isPullRequestItem(item: GitHubActionItem) {
-  return item.kind === 'review_requested' || item.kind.startsWith('authored_pr') || item.kind === 'stale_green_pr' || item.source === 'pulls' || item.source === 'reviews';
+  return item.url.includes('/pull/') || item.kind === 'review_requested' || item.kind === 'repo_pr' || isAuthoredPrItem(item) || item.source === 'pulls' || item.source === 'reviews';
+}
+
+function isAuthoredPrItem(item: GitHubActionItem) {
+  return item.kind.startsWith('authored_pr') || item.kind === 'stale_green_pr';
 }
 
 function isIssueItem(item: GitHubActionItem) {
-  return item.kind === 'assigned' || item.kind === 'maintenance' || item.source === 'issues';
+  return !isPullRequestItem(item) && (item.url.includes('/issues/') || item.kind === 'assigned' || item.kind === 'maintenance' || item.source === 'issues');
 }
 
 async function requireSession(c: any) {
@@ -328,7 +336,7 @@ function renderDashboardHeader(props: any) {
 function renderDashboard(props: any) {
   return `${props.notice ? `<section class="setup-status ready">${escapeHtml(props.notice.message)}</section>` : ''}
   ${props.usingFixtures ? '<section class="setup-status"><strong>Test fixture mode is enabled.</strong> Dashboard items are sample data, not your live GitHub account. Remove TEST_GITHUB_FIXTURES in Cloudflare to use real GitHub data.</section>' : ''}
-  <div class="dashboard-layout"><section class="inbox panel"><div class="item-list inbox-list">${props.items.map(renderItem).join('') || '<p class="empty">No GitHub events need your attention right now.</p>'}</div></section><aside class="marginalia" aria-label="Dashboard statistics"><section class="panel stat-card"><p class="eyebrow">Counts</p><div class="stat-list">${renderStat('PRs', props.counts.pullRequests)}${renderStat('Issues', props.counts.issues)}${renderStat('Mentions', props.counts.mentioned)}${renderStat('Assigned', props.counts.assigned)}</div></section><section class="panel stat-card"><p class="eyebrow">Freshness</p><p><strong>${escapeHtml(props.freshness.status)}</strong></p><p class="muted">Last scan ${props.freshness.lastScanAt ?? 'never'}</p>${props.rateLimit ? `<p class="muted">GitHub rate limit ${props.rateLimit.remaining}</p>` : ''}</section></aside></div>`;
+  <div class="dashboard-layout"><section class="inbox panel"><div class="item-list inbox-list">${props.items.map(renderItem).join('') || '<p class="empty">No GitHub events need your attention right now.</p>'}</div></section><aside class="marginalia" aria-label="Dashboard statistics"><section class="panel stat-card"><p class="eyebrow">Counts</p><div class="stat-list">${renderStat('PRs', props.counts.pullRequests)}${renderStat('Issues', props.counts.issues)}${renderStat('My PRs · own repos', props.counts.myPrsOwnRepos)}${renderStat('My PRs · elsewhere', props.counts.myPrsOtherRepos)}${renderStat('PRs to my repos', props.counts.prsInMyRepos)}</div></section><section class="panel stat-card"><p class="eyebrow">Freshness</p><p><strong>${escapeHtml(props.freshness.status)}</strong></p><p class="muted">Last scan ${props.freshness.lastScanAt ?? 'never'}</p>${props.rateLimit ? `<p class="muted">GitHub rate limit ${props.rateLimit.remaining}</p>` : ''}</section></aside></div>`;
 }
 
 function renderStat(label: string, value: number) {
@@ -364,8 +372,22 @@ function renderDesignLanguage() {
 
 function renderItem(item: GitHubActionItem) {
   const when = formatInboxTime(item.updatedAt);
-  const chips = [`Type: ${item.kind.replaceAll('_', ' ')}`, item.repo, item.source].map((chip) => `<span class="chip">${escapeHtml(chip)}</span>`).join('');
+  const chips = [itemTypeLabel(item), itemRelationshipLabel(item), item.repo].filter(Boolean).map((chip) => `<span class="chip">${escapeHtml(chip)}</span>`).join('');
   return `<article class="item"><time class="item-time" datetime="${escapeHtml(item.updatedAt)}"><span>${escapeHtml(when.date)}</span><strong>${escapeHtml(when.time)}</strong></time><div class="item-main"><div class="chips">${chips}</div><a class="item-title" href="${item.url}">${escapeHtml(item.title)}</a><p>${escapeHtml(item.reason)}</p><p class="action">${escapeHtml(item.suggestedAction)}</p></div></article>`;
+}
+
+function itemTypeLabel(item: GitHubActionItem) {
+  if (isPullRequestItem(item)) return 'Pull request';
+  if (isIssueItem(item)) return 'Issue';
+  return item.kind.replaceAll('_', ' ');
+}
+
+function itemRelationshipLabel(item: GitHubActionItem) {
+  if (isAuthoredPrItem(item)) return item.evidence?.isOwnRepo ? 'My PR · own repo' : 'My PR · other repo';
+  if (item.kind === 'repo_pr') return 'Other person’s PR · my repo';
+  if (item.kind === 'review_requested') return 'Review requested';
+  if (item.kind === 'maintenance') return 'Created by me';
+  return item.source;
 }
 
 function formatInboxTime(value: string) {

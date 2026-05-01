@@ -20,6 +20,10 @@ describe('Sunrise app routes', () => {
     await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
     await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
       .bind('i1', 'k1', 'P0', 'review_requested', 'Review the launch PR', 'o/r', 'https://github.com/o/r/pull/1', '2026-04-30T00:00:00Z', 'You were requested for review.', 'Review PR', '{}', 'notifications').run();
+    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+      .bind('i2', 'k2', 'P2', 'authored_pr_pending', 'My PR to another repo', 'someone/project', 'https://github.com/someone/project/pull/2', '2026-04-29T00:00:00Z', 'Your authored PR is waiting on pending checks or review.', 'Nudge reviewers or update PR', '{"isOwnRepo":false,"isAuthored":true}', 'search').run();
+    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+      .bind('i3', 'k3', 'P2', 'repo_pr', 'External PR to my repo', 'ade/r', 'https://github.com/ade/r/pull/8', '2026-04-28T00:00:00Z', 'An open PR targets one of your repositories.', 'Review or triage this PR', '{"isOwnRepo":true,"isAuthored":false}', 'search').run();
     const res = await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
     const html = await res.text();
     expect(html).toContain('class="dashboard-layout"');
@@ -32,9 +36,13 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('Review the launch PR');
     expect(html).toContain('class="item-time"');
     expect(html.indexOf('class="item-time"')).toBeLessThan(html.indexOf('Review the launch PR'));
-    expect(html).toContain('Type: review requested');
-    expect(html).toContain('<span>PRs</span><strong>1</strong>');
+    expect(html).toContain('Review requested');
+    expect(html).toContain('My PR · other repo');
+    expect(html).toContain('Other person’s PR · my repo');
+    expect(html).toContain('<span>PRs</span><strong>3</strong>');
     expect(html).toContain('<span>Issues</span><strong>0</strong>');
+    expect(html).toContain('<span>My PRs · elsewhere</span><strong>1</strong>');
+    expect(html).toContain('<span>PRs to my repos</span><strong>1</strong>');
     expect(html).toContain('@media(max-width:760px){main{width:min(100% - 20px,1120px);margin-top:12px');
     expect(html).toContain('.site-header{position:sticky;top:0;left:0;right:auto;width:100%');
     expect(html).toContain('.header-extra form{display:block;flex:0 0 auto}');

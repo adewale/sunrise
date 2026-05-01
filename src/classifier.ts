@@ -12,6 +12,7 @@ const directnessRank: Record<ActionKind, number> = {
   mention: 3,
   security_alert: 0,
   invitation: 0,
+  repo_pr: 2,
   authored_pr_pending: 4,
   repo_missing_verify_command: 5,
   repo_missing_agent_instructions: 5,
@@ -37,6 +38,10 @@ export function classifyChange(change: GitHubChange, ownerLogin: string): GitHub
     recentCommitCount: raw.recentCommitCount as number | undefined,
     recentFixCommitCount: raw.recentFixCommitCount as number | undefined,
     activeRepoCount: raw.activeRepoCount as number | undefined,
+    author: raw.author as string | undefined,
+    repoOwner: raw.repoOwner as string | undefined,
+    isOwnRepo: raw.isOwnRepo as boolean | undefined,
+    isAuthored: raw.isAuthored as boolean | undefined,
   };
 
   const make = (priority: Priority, kind: ActionKind, why: string, action: string): GitHubActionItem => ({
@@ -59,6 +64,7 @@ export function classifyChange(change: GitHubChange, ownerLogin: string): GitHub
   if (reason === 'mention' || reason === 'team_mention' || change.sourceEndpoint.includes('mentions')) return make('P1', 'mention', 'You were mentioned directly.', 'Reply to mention');
   if (reason === 'security_alert') return make('P0', 'security_alert', 'GitHub reported a security alert.', 'Triage security alert');
   if (change.sourceEndpoint.includes('invitations')) return make('P0', 'invitation', 'A repository or organization invitation is pending.', 'Accept or decline invitation');
+  if (change.sourceEndpoint.includes('owned-repo-prs')) return make('P2', 'repo_pr', 'An open PR targets one of your repositories.', 'Review or triage this PR');
 
   const isAuthored = String(raw.author ?? '').toLowerCase() === ownerLogin.toLowerCase() || change.sourceEndpoint.includes('authored-prs');
   if (isAuthored && raw.checks === 'failure') return make('P0', 'authored_pr_failing', 'Your authored PR has failing checks.', 'Fix failing checks');

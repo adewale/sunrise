@@ -24,7 +24,9 @@ describe('Sunrise app routes', () => {
     const html = await res.text();
     expect(html).toContain('class="dashboard-layout"');
     expect(html).toContain('class="inbox panel"');
+    expect(html).toContain('<strong>Inbox</strong>');
     expect(html).not.toContain('GitHub inbox');
+    expect(html).not.toContain('<strong>Dashboard</strong>');
     expect(html).not.toContain('<p class="eyebrow">P0</p>');
     expect(html).toContain('class="marginalia"');
     expect(html).toContain('Review the launch PR');

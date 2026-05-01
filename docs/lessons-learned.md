@@ -228,3 +228,76 @@ Cloudflare's Deploy to Cloudflare docs are directionally right, but several poin
 
 8. **Surface queue consumer conflicts in the dashboard UI.**
    The error should include suggested fixes and a link to the queue resource already consuming the queue.
+
+## 16. An inbox should optimize skimming before categorization
+
+For Sunrise, the primary user task is not reading a dashboard; it is scanning recent GitHub events and deciding what to open, ignore, or leave.
+
+The better hierarchy is:
+
+1. time, because recency is the scan axis;
+2. type, because users need to distinguish review requests, authored PRs, issues, and discussion activity;
+3. repo and source, because they explain context;
+4. title/reason/action, because those support the decision.
+
+A Tuftean layout works best when the date/time forms a quiet left rail. This lets the eye skim vertically without decoding chips or prose first. Avoid priority buckets unless the classifier is mature enough to be trusted; inaccurate prioritization is worse than simple reverse chronology.
+
+## 17. Do not let page vocabulary drift
+
+After the dashboard became an inbox, the visible header still said “Dashboard”. That was inconsistent with the product model and made the UI feel unresolved.
+
+Rule: when a page changes conceptual model, update every visible label and test expectation at the same time:
+
+- header title;
+- empty state;
+- tests;
+- docs/screenshots;
+- route names only if necessary.
+
+The URL can remain `/dashboard` for compatibility, but the UI should say what the user is doing: “Inbox”.
+
+## 18. Mobile sticky headers must preserve primary actions
+
+On desktop, the fixed header can afford separated brand, status, theme toggle, and refresh action. On mobile, hiding **Manual refresh** made the most important recovery action disappear.
+
+Better mobile rule:
+
+- header spans the full viewport width;
+- header is `position: sticky` rather than fixed overlay;
+- reserve right padding for the theme toggle;
+- keep the primary action visible, even if smaller;
+- reduce metadata before removing actions.
+
+If there is a trade-off between showing status text and showing the action that updates the data, keep the action.
+
+## 19. Use visual audit tools, but classify false positives
+
+Running the Impeccable audit on `src/app.ts` caught one useful issue and two false positives:
+
+- useful: the dark-mode theme toggle used a colored glow, which reads as a generic AI/dark-glow tell;
+- false positives: table cell `border-left` and `border-right` were flagged as “side-tab” accents, but they are neutral table borders, not card accents.
+
+Lesson: automated visual lint is valuable as a consistency pass, not as an unquestioned source of truth. Record which findings are real, fix the real pattern, and avoid contorting semantic table/card borders just to satisfy a regex.
+
+## 20. GitHub notifications are not a complete inbox
+
+The first scanner only queried `/notifications`. That missed several classes of relevant work:
+
+- open PRs authored by the user;
+- open issues authored by the user;
+- items assigned to the user;
+- PRs requesting the user's review;
+- active threads involving the user.
+
+A personal GitHub inbox needs both notification pagination and search-backed discovery:
+
+```txt
+/notifications?all=false&per_page=100 + Link pagination
+/search/issues?q=is:pr is:open review-requested:OWNER
+/search/issues?q=is:open assignee:OWNER
+/search/issues?q=is:pr is:open author:OWNER
+/search/issues?q=is:issue is:open author:OWNER
+/search/issues?q=is:open involves:OWNER
+```
+
+Dedupe by canonical subject key after combining sources. The UI should then present one reverse-chronological inbox, not one panel per API endpoint.

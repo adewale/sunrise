@@ -54,6 +54,20 @@ describe('Sunrise app routes', () => {
     expect(oauth.fix).toContain('OAuth App');
   });
 
+  it('normalizes OWNER_LOGIN values that users enter as GitHub profile URLs', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).startsWith('https://github.com/login/oauth/authorize')) return new Response('', { status: 302 });
+      if (String(url).startsWith('https://api.github.com/users/adewale')) return Response.json({ login: 'adewale' });
+      return new Response('not found', { status: 404 });
+    }));
+    const env = { DB: createMemoryDb(), GITHUB_QUEUE: {} as Queue, GITHUB_CLIENT_ID: 'Ov23liValidClientId', GITHUB_CLIENT_SECRET: 'secret', OWNER_LOGIN: 'https://github.com/adewale', SESSION_SECRET: 'long-enough-session-secret' } as unknown as Env;
+    const res = await app.request('/setup?json', {}, env);
+    const props = await res.json() as any;
+    const owner = props.checks.find((check: any) => check.id === 'owner_login');
+    expect(owner.status).toBe('pass');
+    expect(owner.message).toContain('adewale');
+  });
+
   it('reports setup readiness for D1, queue, owner login, secrets, and callback URL', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (String(url).startsWith('https://github.com/login/oauth/authorize')) return new Response('', { status: 302 });

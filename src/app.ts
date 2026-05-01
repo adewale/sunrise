@@ -66,7 +66,8 @@ app.get('/callback', async (c) => {
   if (!tokenJson.access_token) return c.text('OAuth token exchange failed', 401);
   const userRes = await fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${tokenJson.access_token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'sunrise-dashboard' } });
   const user = await userRes.json<any>();
-  if (c.env.OWNER_LOGIN && user.login !== c.env.OWNER_LOGIN) return html('<h1>Not owner</h1><p>This is a personal Sunrise instance. Deploy your own version from the GitHub repo.</p>', 403);
+  const expectedOwner = normalizeGitHubLogin(c.env.OWNER_LOGIN ?? '');
+  if (expectedOwner && user.login.toLowerCase() !== expectedOwner.toLowerCase()) return html(`<h1>Not owner</h1><p>Signed in as ${escapeHtml(user.login)}, but this Sunrise instance expects ${escapeHtml(expectedOwner)}.</p><p>This is a personal Sunrise instance. Deploy your own version from the GitHub repo.</p>`, 403);
   const sid = crypto.randomUUID();
   await c.env.DB.prepare('INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)')
     .bind(sid, user.login, String(user.id), tokenJson.access_token, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), new Date().toISOString()).run();
@@ -197,8 +198,9 @@ async function setupDiagnostics(env: Env, requestUrl: string): Promise<SetupDiag
     ? { id: 'queue', label: 'Queue binding', status: 'pass', message: 'Queue binding GITHUB_QUEUE is present.' }
     : { id: 'queue', label: 'Queue binding', status: 'fail', message: 'Queue binding GITHUB_QUEUE is missing.', fix: 'Deploy to Cloudflare should provision Queues. If a queue name collides, choose a unique queue name in the deploy setup.' });
 
-  if (env.OWNER_LOGIN) {
-    const owner = await checkOwnerLogin(env.OWNER_LOGIN);
+  const normalizedOwner = normalizeGitHubLogin(env.OWNER_LOGIN ?? '');
+  if (normalizedOwner) {
+    const owner = await checkOwnerLogin(normalizedOwner, env.OWNER_LOGIN ?? normalizedOwner);
     add(owner);
   } else {
     add({ id: 'owner_login', label: 'GitHub owner', status: 'fail', message: 'OWNER_LOGIN is missing.', fix: 'Set OWNER_LOGIN to your GitHub username, for example `adewale`.' });
@@ -223,11 +225,23 @@ async function setupDiagnostics(env: Env, requestUrl: string): Promise<SetupDiag
   return { ready: checks.every((check) => check.status !== 'fail'), origin, callbackUrl, missing: setupMissing(env), checks };
 }
 
-async function checkOwnerLogin(login: string): Promise<SetupCheck> {
+function normalizeGitHubLogin(value: string) {
+  const trimmed = value.trim().replace(/^@/, '');
+  if (!trimmed) return '';
+  try {
+    const url = new URL(trimmed);
+    if (url.hostname === 'github.com' || url.hostname === 'www.github.com') return url.pathname.split('/').filter(Boolean)[0] ?? '';
+  } catch {
+    // Plain GitHub login, not a URL.
+  }
+  return trimmed.replace(/^https?:\/\/(www\.)?github\.com\//, '').split('/').filter(Boolean)[0] ?? '';
+}
+
+async function checkOwnerLogin(login: string, configuredValue = login): Promise<SetupCheck> {
   try {
     const res = await fetch(`https://api.github.com/users/${encodeURIComponent(login)}`, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'sunrise-dashboard' } });
-    if (res.ok) return { id: 'owner_login', label: 'GitHub owner', status: 'pass', message: `GitHub user ${login} exists.` };
-    return { id: 'owner_login', label: 'GitHub owner', status: 'fail', message: `GitHub user ${login} was not found.`, fix: 'Set OWNER_LOGIN to your exact GitHub username.' };
+    if (res.ok) return { id: 'owner_login', label: 'GitHub owner', status: 'pass', message: configuredValue === login ? `GitHub user ${login} exists.` : `OWNER_LOGIN normalized to ${login}; GitHub user exists.` };
+    return { id: 'owner_login', label: 'GitHub owner', status: 'fail', message: `GitHub user ${login} was not found.`, fix: 'Set OWNER_LOGIN to your GitHub username only, for example `adewale`. A profile URL also works, but the username is clearer.' };
   } catch {
     return { id: 'owner_login', label: 'GitHub owner', status: 'warn', message: `Could not verify ${login} with GitHub right now.` };
   }

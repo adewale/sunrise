@@ -148,6 +148,8 @@ async function dashboardProps(env: Env, login: string) {
       assigned: items.filter((i) => i.kind === 'assigned').length,
       mentioned: items.filter((i) => i.kind === 'mention').length,
       createdIssuesNeedingResponse: items.filter((i) => i.kind === 'maintenance').length,
+      pullRequests: items.filter(isPullRequestItem).length,
+      issues: items.filter(isIssueItem).length,
       authoredOpenPrs: items.filter((i) => i.kind.startsWith('authored_pr') || i.kind === 'stale_green_pr').length,
       reviewRequests: items.filter((i) => i.kind === 'review_requested').length,
     },
@@ -158,6 +160,14 @@ async function dashboardProps(env: Env, login: string) {
 
 function rowToItem(row: Record<string, any>): GitHubActionItem {
   return { id: row.id, canonicalSubjectKey: row.canonical_subject_key, priority: row.priority, kind: row.kind, title: row.title, repo: row.repo, url: row.url, updatedAt: row.updated_at, reason: row.reason, suggestedAction: row.suggested_action, evidence: JSON.parse(row.evidence_json || '{}'), source: row.source };
+}
+
+function isPullRequestItem(item: GitHubActionItem) {
+  return item.kind === 'review_requested' || item.kind.startsWith('authored_pr') || item.kind === 'stale_green_pr' || item.source === 'pulls' || item.source === 'reviews';
+}
+
+function isIssueItem(item: GitHubActionItem) {
+  return item.kind === 'assigned' || item.kind === 'maintenance' || item.source === 'issues';
 }
 
 async function requireSession(c: any) {
@@ -318,7 +328,7 @@ function renderDashboardHeader(props: any) {
 function renderDashboard(props: any) {
   return `${props.notice ? `<section class="setup-status ready">${escapeHtml(props.notice.message)}</section>` : ''}
   ${props.usingFixtures ? '<section class="setup-status"><strong>Test fixture mode is enabled.</strong> Dashboard items are sample data, not your live GitHub account. Remove TEST_GITHUB_FIXTURES in Cloudflare to use real GitHub data.</section>' : ''}
-  <div class="dashboard-layout"><section class="inbox panel"><div class="item-list inbox-list">${props.items.map(renderItem).join('') || '<p class="empty">No GitHub events need your attention right now.</p>'}</div></section><aside class="marginalia" aria-label="Dashboard statistics"><section class="panel stat-card"><p class="eyebrow">Counts</p><div class="stat-list">${renderStat('Assigned', props.counts.assigned)}${renderStat('Mentioned', props.counts.mentioned)}${renderStat('Authored PRs', props.counts.authoredOpenPrs)}${renderStat('Reviews', props.counts.reviewRequests)}</div></section><section class="panel stat-card"><p class="eyebrow">Freshness</p><p><strong>${escapeHtml(props.freshness.status)}</strong></p><p class="muted">Last scan ${props.freshness.lastScanAt ?? 'never'}</p>${props.rateLimit ? `<p class="muted">GitHub rate limit ${props.rateLimit.remaining}</p>` : ''}</section></aside></div>`;
+  <div class="dashboard-layout"><section class="inbox panel"><div class="item-list inbox-list">${props.items.map(renderItem).join('') || '<p class="empty">No GitHub events need your attention right now.</p>'}</div></section><aside class="marginalia" aria-label="Dashboard statistics"><section class="panel stat-card"><p class="eyebrow">Counts</p><div class="stat-list">${renderStat('PRs', props.counts.pullRequests)}${renderStat('Issues', props.counts.issues)}${renderStat('Mentions', props.counts.mentioned)}${renderStat('Assigned', props.counts.assigned)}</div></section><section class="panel stat-card"><p class="eyebrow">Freshness</p><p><strong>${escapeHtml(props.freshness.status)}</strong></p><p class="muted">Last scan ${props.freshness.lastScanAt ?? 'never'}</p>${props.rateLimit ? `<p class="muted">GitHub rate limit ${props.rateLimit.remaining}</p>` : ''}</section></aside></div>`;
 }
 
 function renderStat(label: string, value: number) {

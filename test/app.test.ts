@@ -28,6 +28,11 @@ describe('Sunrise app routes', () => {
     expect(html).not.toContain('<p class="eyebrow">P0</p>');
     expect(html).toContain('class="marginalia"');
     expect(html).toContain('Review the launch PR');
+    expect(html).toContain('class="item-time"');
+    expect(html.indexOf('class="item-time"')).toBeLessThan(html.indexOf('Review the launch PR'));
+    expect(html).toContain('Type: review requested');
+    expect(html).toContain('@media(max-width:760px){main{width:min(100% - 20px,1120px);margin-top:12px');
+    expect(html).toContain('.site-header{position:sticky;top:0;left:0;right:auto;width:100%');
     expect(html).not.toContain('Recent signal');
   });
 

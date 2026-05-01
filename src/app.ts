@@ -258,7 +258,9 @@ async function checkGitHubClientId(clientId: string, callbackUrl: string): Promi
     if (res.status === 404) {
       return { id: 'github_client_id', label: 'GitHub OAuth client ID', status: 'fail', message: 'GitHub returned 404 for this OAuth authorize URL.', fix: 'Use the Client ID from a GitHub OAuth App. A GitHub App ID/client value or typo will send users to a GitHub 404.' };
     }
-    if (res.status >= 200 && res.status < 400) return { id: 'github_client_id', label: 'GitHub OAuth client ID', status: 'pass', message: 'GitHub accepts this OAuth client ID.' };
+    if (res.status >= 200 && res.status < 400) {
+      return { id: 'github_client_id', label: 'GitHub OAuth client ID', status: 'warn', message: 'GitHub redirects unauthenticated checks to login, so Sunrise cannot fully verify this client ID until browser sign-in.', fix: 'If the browser lands on a GitHub 404 after login, recreate a GitHub OAuth App and copy its Client ID and Client secret into Cloudflare.' };
+    }
     return { id: 'github_client_id', label: 'GitHub OAuth client ID', status: 'warn', message: `GitHub returned HTTP ${res.status} while checking the client ID.`, fix: 'If sign-in fails, recreate the GitHub OAuth App and copy the Client ID again.' };
   } catch {
     return { id: 'github_client_id', label: 'GitHub OAuth client ID', status: 'warn', message: 'Could not reach GitHub to verify the OAuth client ID.' };

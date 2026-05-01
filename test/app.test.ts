@@ -54,6 +54,23 @@ describe('Sunrise app routes', () => {
     expect(oauth.fix).toContain('OAuth App');
   });
 
+  it('does not claim GitHub OAuth client ID is verified when GitHub only redirects to login', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).startsWith('https://github.com/login/oauth/authorize')) {
+        return new Response('', { status: 302, headers: { location: 'https://github.com/login?return_to=%2Flogin%2Foauth%2Fauthorize' } });
+      }
+      if (String(url).startsWith('https://api.github.com/users/ade')) return Response.json({ login: 'ade' });
+      return new Response('ok');
+    }));
+    const env = { DB: createMemoryDb(), GITHUB_QUEUE: {} as Queue, GITHUB_CLIENT_ID: 'bogus', GITHUB_CLIENT_SECRET: 'secret', OWNER_LOGIN: 'ade', SESSION_SECRET: 'long-enough-session-secret' } as unknown as Env;
+    const res = await app.request('/setup?json', {}, env);
+    const props = await res.json() as any;
+    const oauth = props.checks.find((check: any) => check.id === 'github_client_id');
+    expect(oauth.status).toBe('warn');
+    expect(oauth.message).toContain('cannot fully verify');
+    expect(props.ready).toBe(true);
+  });
+
   it('normalizes OWNER_LOGIN values that users enter as GitHub profile URLs', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (String(url).startsWith('https://github.com/login/oauth/authorize')) return new Response('', { status: 302 });

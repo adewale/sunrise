@@ -41,7 +41,8 @@ describe('Sunrise app routes', () => {
     const html = await res.text();
     expect(html).toContain('class="dashboard-layout"');
     expect(html).toContain('class="inbox panel"');
-    expect(html).toContain('<strong>Inbox</strong>');
+    expect(html).toContain('class="brand-mark"');
+    expect(html).not.toContain('<strong>Inbox</strong>');
     expect(html).not.toContain('GitHub inbox');
     expect(html).not.toContain('<strong>Dashboard</strong>');
     expect(html).not.toContain('<p class="eyebrow">P0</p>');
@@ -60,7 +61,7 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('<span>My PRs · elsewhere</span><strong>1</strong>');
     expect(html).toContain('<span>PRs to my repos</span><strong>1</strong>');
     expect(html).toContain('@media(max-width:760px){main{width:min(100% - 20px,1120px);margin-top:12px');
-    expect(html).toContain('<header class="site-header"><a class="brand" href="/">Sunrise</a>');
+    expect(html).toContain('<header class="site-header"><a class="brand" href="/"><svg class="brand-mark"');
     expect(html).toContain('<button class="theme-toggle"');
     expect(html.indexOf('<button class="theme-toggle"')).toBeLessThan(html.indexOf('</header>'));
     expect(html).toContain('html:not([data-theme=dark])[data-daypart=morning]');

@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { inertia, serializePage, type PageObject } from '@hono/inertia';
 import type { Env } from './env';
 import { clearSessionCookie, getSession, retryD1, sessionCookie } from './db';
 import type { GitHubActionItem } from './types';
@@ -7,29 +8,27 @@ import { processGithubChange, runDiscovery } from './scanner';
 type Bindings = Env;
 const app = new Hono<{ Bindings: Bindings }>();
 
+app.use(inertia({ version: 'sunrise-1', rootView: renderInertiaRoot }));
+
 app.get('/favicon.svg', (c) => new Response(renderFaviconSvg(), { headers: { 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': 'public, max-age=86400' } }));
 
 app.get('/', async (c) => {
   const session = await getSession(c.env.DB, c.req.header('Cookie') ?? null);
   if (session) return c.redirect('/dashboard');
   const setup = await setupDiagnostics(c.env, c.req.url);
-  if (c.req.query('json') !== undefined) return c.json({ product: 'Sunrise', signedIn: false, setup });
-  return html(`
-    <section class="hero panel">
-    <p class="actions"><a class="button primary" href="${c.env.GITHUB_REPO_URL ?? 'https://github.com/adewale/sunrise'}">Deploy your own</a> <a class="button ghost" href="/login">Sign in with GitHub</a></p>
-    <p class="muted">Single-user, read-only by default, and your snapshots stay in your Cloudflare account.</p></section>
-    ${renderSetupGuide(setup)}
-  `);
+  const props = { product: 'Sunrise', signedIn: false, setup, repoUrl: c.env.GITHUB_REPO_URL ?? 'https://github.com/adewale/sunrise' };
+  if (c.req.query('json') !== undefined) return c.json(props);
+  return c.render('Landing', props);
 });
 
 app.get('/design', (c) => {
-  return html(renderDesignLanguage());
+  return c.render('Design', { product: 'Sunrise' });
 });
 
 app.get('/setup', async (c) => {
   const setup = await setupDiagnostics(c.env, c.req.url);
   if (c.req.query('json') !== undefined || c.req.header('Accept')?.includes('application/json')) return c.json(setup);
-  return html(renderSetupGuide(setup));
+  return c.render('Setup', { product: 'Sunrise', setup });
 });
 
 app.get('/login', async (c) => {
@@ -90,14 +89,14 @@ app.get('/dashboard', async (c) => {
   const props: any = await dashboardProps(c.env, session.githubLogin, Number(c.req.query('page') ?? '1'));
   if (c.req.query('refresh') === 'started') props.notice = { kind: 'success', message: `Manual refresh started. Found ${c.req.query('candidates') ?? '0'} GitHub events; the inbox will fill in as processing finishes.` };
   if (c.req.query('json') !== undefined || c.req.header('Accept')?.includes('application/json')) return c.json(props);
-  return html(renderDashboard(props), 200, renderDashboardHeader(props));
+  return c.render('Dashboard', props);
 });
 
 app.get('/settings', async (c) => {
   const session = await requireSession(c);
   if (session instanceof Response) return session;
   const settings = await readSettings(c.env.DB);
-  return html(renderSettings(settings), 200, `<div class="header-extra"><div><p class="eyebrow">${escapeHtml(session.githubLogin)}</p><strong>Settings</strong><p class="header-meta">Tune your inbox rhythm.</p></div><a class="button ghost" href="/dashboard">Inbox</a></div>`);
+  return c.render('Settings', { product: 'Sunrise', signedInAs: session.githubLogin, settings });
 });
 
 app.post('/settings', async (c) => {
@@ -121,7 +120,7 @@ app.get('/runs', async (c) => {
   if (session instanceof Response) return session;
   const runs = (await c.env.DB.prepare('SELECT * FROM scan_runs ORDER BY started_at DESC LIMIT 10').all()).results;
   if (c.req.header('Accept')?.includes('application/json')) return c.json({ runs });
-  return html(`<section class="section panel"><p class="eyebrow">Operations</p><h1>Runs</h1><table><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Candidates</th><th>Processed</th><th>Error</th></tr></thead><tbody>${runs.map((r: any) => `<tr><td>${r.started_at}</td><td>${r.trigger}</td><td><span class="badge">${r.status}</span></td><td>${r.candidate_count}</td><td>${r.processed_count ?? 0}</td><td>${escapeHtml(r.error ?? '')}</td></tr>`).join('')}</tbody></table></section>`);
+  return c.render('Runs', { product: 'Sunrise', runs });
 });
 
 app.post('/logout', async (c) => {
@@ -376,8 +375,50 @@ function scanStatus(run: Record<string, any> | null) {
   return Date.now() - Date.parse(run.completed_at ?? run.started_at) > 36 * 60 * 60 * 1000 ? 'stale' : 'fresh';
 }
 
+function renderInertiaRoot(page: PageObject) {
+  const rendered = renderInertiaPage(page);
+  return documentHtml(rendered.body, rendered.headerExtra, `<script data-page="app" type="application/json">${serializePage(page)}</script>`);
+}
+
+function renderInertiaPage(page: PageObject) {
+  const props: any = page.props ?? {};
+  switch (page.component) {
+    case 'Landing':
+      return { body: renderLanding(props), headerExtra: '' };
+    case 'Dashboard':
+      return { body: renderDashboard(props), headerExtra: renderDashboardHeader(props) };
+    case 'Settings':
+      return { body: renderSettings(props.settings), headerExtra: renderSettingsHeader(props) };
+    case 'Setup':
+      return { body: renderSetupGuide(props.setup), headerExtra: '' };
+    case 'Runs':
+      return { body: renderRuns(props.runs ?? []), headerExtra: '' };
+    case 'Design':
+      return { body: renderDesignLanguage(), headerExtra: '' };
+    default:
+      return { body: '<section class="section panel"><h1>Page not found</h1></section>', headerExtra: '' };
+  }
+}
+
+function renderLanding(props: any) {
+  return `
+    <section class="hero panel">
+    <p class="actions"><a class="button primary" href="${escapeHtml(props.repoUrl ?? 'https://github.com/adewale/sunrise')}">Deploy your own</a> <a class="button ghost" href="/login">Sign in with GitHub</a></p>
+    <p class="muted">Single-user, read-only by default, and your snapshots stay in your Cloudflare account.</p></section>
+    ${renderSetupGuide(props.setup)}
+  `;
+}
+
 function renderDashboardHeader(props: any) {
   return `<div class="header-extra"><div><p class="eyebrow">${escapeHtml(props.signedInAs)} · ${props.freshness.status}</p><p class="header-meta">Checked ${escapeHtml(formatDateTime(props.freshness.lastScanAt))}${props.rateLimit ? ` · rate limit ${props.rateLimit.remaining}` : ''}</p></div><div class="header-actions"><a class="button icon-button" href="/settings" aria-label="Settings" title="Settings"><svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.25a3.75 3.75 0 1 1 0 7.5 3.75 3.75 0 0 1 0-7.5Zm0-5 1.12 2.35 2.52.36-1.82 1.78.43 2.51L12 9.07l-2.25 1.18.43-2.51-1.82-1.78 2.52-.36L12 3.25Z"/><path d="M4.5 13.2v-2.4l2.1-.75c.18-.56.41-1.1.7-1.6L6.35 6.4l1.7-1.7 2.05.95c.5-.28 1.03-.52 1.6-.7l.75-2.1h2.4l.75 2.1c.56.18 1.1.42 1.6.7l2.05-.95 1.7 1.7-.95 2.05c.28.5.52 1.04.7 1.6l2.1.75v2.4l-2.1.75c-.18.56-.42 1.1-.7 1.6l.95 2.05-1.7 1.7-2.05-.95c-.5.29-1.04.52-1.6.7l-.75 2.1h-2.4l-.75-2.1a8.2 8.2 0 0 1-1.6-.7l-2.05.95-1.7-1.7.95-2.05a8.2 8.2 0 0 1-.7-1.6l-2.1-.75Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></a><form method="post" action="/refresh"><button class="button primary">Manual refresh</button></form></div></div>`;
+}
+
+function renderSettingsHeader(props: any) {
+  return `<div class="header-extra"><div><p class="eyebrow">${escapeHtml(props.signedInAs)}</p><strong>Settings</strong><p class="header-meta">Tune your inbox rhythm.</p></div><a class="button ghost" href="/dashboard">Inbox</a></div>`;
+}
+
+function renderRuns(runs: any[]) {
+  return `<section class="section panel"><p class="eyebrow">Operations</p><h1>Runs</h1><table><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Candidates</th><th>Processed</th><th>Error</th></tr></thead><tbody>${runs.map((r: any) => `<tr><td>${r.started_at}</td><td>${r.trigger}</td><td><span class="badge">${r.status}</span></td><td>${r.candidate_count}</td><td>${r.processed_count ?? 0}</td><td>${escapeHtml(r.error ?? '')}</td></tr>`).join('')}</tbody></table></section>`;
 }
 
 function renderDashboard(props: any) {
@@ -488,7 +529,11 @@ function renderSetupChecks(checks: SetupCheck[]) {
 }
 
 function html(body: string, status = 200, headerExtra = '') {
-  return new Response(`<!doctype html><html><head><title>Sunrise</title><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,600..900,60,1&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet"><script>${themeScript()}</script><style>${designCss()}</style></head><body><a class="skip-link" href="#content">Skip to content</a><header class="site-header"><a class="brand" href="/">${renderBrandMark()}<span>Sunrise</span></a>${headerExtra}<button class="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false" title="Toggle dark mode"><span class="sun-icon" aria-hidden="true"></span><span class="moon-icon" aria-hidden="true"></span></button></header><main id="content">${body}</main></body></html>`, { status, headers: { 'content-type': 'text/html; charset=utf-8' } });
+  return new Response(documentHtml(body, headerExtra), { status, headers: { 'content-type': 'text/html; charset=utf-8' } });
+}
+
+function documentHtml(body: string, headerExtra = '', afterMain = '') {
+  return `<!doctype html><html><head><title>Sunrise</title><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,600..900,60,1&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet"><script>${themeScript()}</script><style>${designCss()}</style></head><body><a class="skip-link" href="#content">Skip to content</a><header class="site-header"><a class="brand" href="/">${renderBrandMark()}<span>Sunrise</span></a>${headerExtra}<button class="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false" title="Toggle dark mode"><span class="sun-icon" aria-hidden="true"></span><span class="moon-icon" aria-hidden="true"></span></button></header><main id="content">${body}</main>${afterMain}</body></html>`;
 }
 
 function renderFaviconSvg() {

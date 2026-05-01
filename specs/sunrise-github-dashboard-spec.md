@@ -310,6 +310,12 @@ So the aggressive v1 should use **Tasche-style GitHub OAuth**, but keep it singl
 
 > What do I need to know about my GitHub experience because it is likely to require action from me?
 
+## Current implementation audit
+
+The implementation has intentionally evolved in a few places since this spec was drafted: the primary owner view is now an **Inbox**, reverse-chronological ordering is preferred over visible P0/P1/P2/P3 sections, `/settings` exists for inbox page size, and freshness is compact header metadata rather than a right-column panel.
+
+See `docs/spec-implementation-audit.md` for the current line-by-line implementation audit, intentional product decisions that supersede older v1 subtraction notes, and remaining gaps.
+
 ## Implementation stack candidate: Hono + Inertia on Cloudflare
 
 The best current stack candidate for the product UI is:

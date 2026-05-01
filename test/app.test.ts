@@ -79,6 +79,24 @@ describe('Sunrise app routes', () => {
     expect(html).not.toContain('Recent signal');
   });
 
+  it('serves dashboard through the Inertia protocol without changing the HTML view', async () => {
+    const db = createMemoryDb();
+    await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
+    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+      .bind('i1', 'k1', 'P0', 'review_requested', 'Review the launch PR', 'o/r', 'https://github.com/o/r/pull/1', '2026-04-30T00:00:00Z', 'You were requested for review.', 'Review PR', '{}', 'notifications').run();
+
+    const htmlRes = await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
+    const html = await htmlRes.text();
+    expect(html).toContain('data-page="app"');
+    expect(html).toContain('"component":"Dashboard"');
+    expect(html).toContain('Review the launch PR');
+
+    const inertiaRes = await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid', 'X-Inertia': 'true', 'X-Inertia-Version': 'sunrise-1' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
+    const page = await inertiaRes.json() as any;
+    expect(page.component).toBe('Dashboard');
+    expect(page.props.items[0].title).toBe('Review the launch PR');
+  });
+
   it('returns paginated dashboard JSON with configurable 50 item default', async () => {
     const db = createMemoryDb();
     await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();

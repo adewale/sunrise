@@ -441,7 +441,7 @@ function scanStatus(run: Record<string, any> | null) {
 function renderInertiaRoot(page: PageObject) {
   const rendered = renderInertiaPage(page);
   const Component = pageComponents[page.component];
-  const body = Component ? renderToString(createElement(Component, { ...(page.props as Record<string, unknown>), __sunriseHtml: rendered.body })) : rendered.body;
+  const body = Component ? renderToString(createElement(Component, page.props as Record<string, unknown>)) : rendered.body;
   return documentHtml(body, rendered.headerExtra, `<script data-page="app" type="application/json">${serializePage(page)}</script>`);
 }
 

@@ -56,7 +56,7 @@ These are not treated as bugs; the spec should be read with these product decisi
 ### UI / Inertia
 
 - The served client bundle is progressive and preserves current server-rendered HTML; full React hydration of the visible UI is not complete yet.
-- React page files are placeholders for typed page registration. The large inline string renderer in `src/app.ts` remains and should be split into reusable page/component modules.
+- React page files now render the visible page bodies with JSX. Header/root shell rendering and some legacy helper renderers still live in `src/app.ts`; these should be removed once the header/root shell are also componentized.
 - Vite can build `src/client.tsx`, but Worker asset serving is still handled by the explicit `/assets/sunrise-inertia-client.js` route rather than Cloudflare static assets.
 
 ### Runs / operations
@@ -118,7 +118,7 @@ Still missing or incomplete from the larger spec:
 
 ## Recommended next order
 
-1. Split the string renderer into typed page/component modules and make the React pages render the visible UI.
+1. Finish moving the header/root shell and remaining legacy render helpers out of `src/app.ts`.
 2. Verify deploy-button provisioning with the new DLQ config.
 3. Capture `EXPLAIN QUERY PLAN` evidence for dashboard queries.
 4. Run the fixture capture script against a real account, redact payloads, and label 50 candidates.

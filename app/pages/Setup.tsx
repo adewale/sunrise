@@ -1,5 +1,5 @@
-type Props = { __sunriseHtml?: string };
+import { SetupGuide } from './_shared';
 
-export default function Setup({ __sunriseHtml = '' }: Props) {
-  return <div className="inertia-page" data-page-component="Setup" dangerouslySetInnerHTML={{ __html: __sunriseHtml }} />;
+export default function Setup(props: any) {
+  return <SetupGuide setup={props.setup} />;
 }

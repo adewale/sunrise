@@ -1,5 +1,6 @@
-type Props = { __sunriseHtml?: string };
+import { Item, Stat } from './_shared';
 
-export default function Dashboard({ __sunriseHtml = '' }: Props) {
-  return <div className="inertia-page" data-page-component="Dashboard" dangerouslySetInnerHTML={{ __html: __sunriseHtml }} />;
+export default function Dashboard(props: any) {
+  const p = props.pagination;
+  return <>{props.notice ? <section className="setup-status ready">{props.notice.message}</section> : null}{props.usingFixtures ? <section className="setup-status"><strong>Test fixture mode is enabled.</strong> Dashboard items are sample data, not your live GitHub account. Remove TEST_GITHUB_FIXTURES in Cloudflare to use real GitHub data.</section> : null}<div className="dashboard-layout"><section className="inbox panel"><div className="item-list inbox-list">{props.items?.length ? props.items.map((item: any) => <Item key={item.id} item={item} ownerLogin={props.signedInAs} />) : <p className="empty">No GitHub events need your attention right now.</p>}</div>{p && p.totalPages > 1 ? <nav className="pagination" aria-label="Inbox pagination">{p.hasPrevious ? <a className="button ghost" href={`/dashboard?page=${p.page - 1}`}>Newer</a> : <span /> }<span className="muted">Page {p.page} of {p.totalPages} · {p.totalItems} events · {p.pageSize} per page</span>{p.hasNext ? <a className="button primary" href={`/dashboard?page=${p.page + 1}`}>Older</a> : <span />}</nav> : null}</section><aside className="marginalia" aria-label="Dashboard statistics"><section className="panel stat-card"><p className="eyebrow">Counts</p><div className="stat-list"><Stat label="PRs" value={props.counts.pullRequests} /><Stat label="Issues" value={props.counts.issues} /><Stat label="My PRs · own repos" value={props.counts.myPrsOwnRepos} /><Stat label="My PRs · elsewhere" value={props.counts.myPrsOtherRepos} /><Stat label="PRs to my repos" value={props.counts.prsInMyRepos} /></div></section></aside></div></>;
 }

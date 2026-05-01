@@ -33,7 +33,7 @@ function execute(store: Record<string, Row[]>, sql: string, v: any[]) {
   else if (/^UPDATE scan_runs SET processed_count/i.test(normalized)) { const r = byId(store.scan_runs, v[0]); if (r) r.processed_count = (r.processed_count ?? 0) + 1; }
   else if (/^INSERT INTO github_changes/i.test(normalized)) upsert(store.github_changes, 'id', row(['id','run_id','canonical_subject_key','source_endpoint','repo','subject_type','subject_url','html_url','updated_at','raw_json','first_seen_at','last_seen_at'], v, { processing_status: 'pending', attempt_count: 0 }));
   else if (/^UPDATE github_changes/i.test(normalized)) { const r = byId(store.github_changes, v.at(-1)); if (r) { if (normalized.includes("'ignored'")) r.processing_status = 'ignored'; else if (normalized.includes("'processed'")) r.processing_status = 'processed'; else if (normalized.includes("'failed'")) { r.processing_status = 'failed'; r.last_error = v[0]; } r.attempt_count = (r.attempt_count ?? 0) + 1; } }
-  else if (/^INSERT INTO action_items/i.test(normalized)) upsert(store.action_items, 'canonical_subject_key', row(['id','canonical_subject_key','priority','kind','title','repo','url','updated_at','reason','suggested_action','evidence_json','source'], v, { ignored_at: null }));
+  else if (/^INSERT INTO action_items/i.test(normalized)) upsert(store.action_items, 'canonical_subject_key', row(['id','canonical_subject_key','kind','title','repo','url','updated_at','reason','suggested_action','evidence_json','source'], v, { ignored_at: null }));
   else if (/^INSERT INTO rate_limit_snapshots/i.test(normalized)) store.rate_limit_snapshots.push(row(['id','resource','remaining','reset_at','captured_at'], v));
   else if (/^INSERT INTO item_evidence/i.test(normalized)) store.item_evidence.push(row(['id','action_item_id','evidence_json','created_at'], v));
   else if (/^INSERT OR IGNORE INTO ignored_items/i.test(normalized)) { if (!store.ignored_items.some((r) => r.canonical_subject_key === v[0])) store.ignored_items.push({ canonical_subject_key: v[0], reason: v[1], ignored_at: v[2] }); }
@@ -54,7 +54,7 @@ function select(store: Record<string, Row[]>, sql: string, v: any[]) {
     return [...rows].sort(desc('started_at')).slice(0, normalized.includes('LIMIT 1') ? 1 : 10);
   }
   if (/FROM rate_limit_snapshots/i.test(normalized)) return [...store.rate_limit_snapshots].sort(desc('captured_at')).slice(0, 1);
-  if (/FROM action_items/i.test(normalized)) return [...store.action_items].filter((r) => r.ignored_at == null).sort((a,b) => String(a.priority).localeCompare(String(b.priority)) || Date.parse(b.updated_at)-Date.parse(a.updated_at)).slice(0, normalized.includes('LIMIT 500') ? 500 : 50);
+  if (/FROM action_items/i.test(normalized)) return [...store.action_items].filter((r) => r.ignored_at == null).sort(desc('updated_at')).slice(0, normalized.includes('LIMIT 500') ? 500 : 50);
   if (/FROM github_changes/i.test(normalized)) return store.github_changes.filter((r) => !v[0] || r.id === v[0]);
   if (/FROM ignored_items/i.test(normalized)) return store.ignored_items.filter((r) => r.canonical_subject_key === v[0]);
   throw new Error(`Unsupported SQL select: ${sql}`);

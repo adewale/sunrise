@@ -28,7 +28,7 @@ Public homepage → GitHub repo → Deploy your own version → own your data
 
 For the owner of a deployed instance, the product should support GitHub sign-in and then route to a dashboard-style view of their GitHub experience.
 
-This is not a full GitHub client. It is a prioritized action surface.
+This is not a full GitHub client. It is a focused GitHub inbox.
 
 After reviewing recent commit history and current agentic-engineering practice, the spec should expand from a notification inbox into a **close-the-loop surface**: not just “who is waiting on me?” but “where is my agentic work unfinished, unverified, unexplained, or drifting?”
 
@@ -71,7 +71,7 @@ Principles:
 - no teams/org admin model beyond the user's GitHub permissions;
 - least-privilege GitHub token or GitHub App credentials;
 - all snapshots and evidence stored in the user's Cloudflare account;
-- easy to fork, customize priority rules, and deploy independently;
+- easy to fork, customize, and deploy independently;
 - public docs should encourage people to deploy their own instance rather than send tokens to a hosted app.
 
 Possible repo tagline:
@@ -112,7 +112,7 @@ one Cloudflare deployment
 one config file / settings page
 one D1 database
 one queue set
-one opinionated action ranking
+one chronological inbox
 ```
 
 ### Data model simplifications
@@ -230,7 +230,7 @@ Not needed:
 
 The app can be opinionated and personal:
 
-- hard-code the priority model first;
+- hard-code a classifier model first;
 - allow a small repo allowlist/ignore list;
 - let the user edit thresholds in one settings file;
 - show “my loops,” not generic dashboards;
@@ -311,7 +311,7 @@ So the aggressive v1 should use **Tasche-style GitHub OAuth**, but keep it singl
 
 ## Current implementation audit
 
-The implementation has intentionally evolved in a few places since this spec was drafted: the primary owner view is now an **Inbox**, reverse-chronological ordering is preferred over visible P0/P1/P2/P3 sections, `/settings` exists for inbox page size, and freshness is compact header metadata rather than a right-column panel.
+The implementation has intentionally evolved in a few places since this spec was drafted: the primary owner view is now an **Inbox**, `/settings` exists for inbox page size, and freshness is compact header metadata rather than a right-column panel.
 
 See `docs/spec-implementation-audit.md` for the current line-by-line implementation audit, intentional product decisions that supersede older v1 subtraction notes, and remaining gaps.
 
@@ -341,7 +341,7 @@ Why this fits the spec:
   - Inertia page JSON for in-app navigation;
   - props JSON for debugging or simple agent access when `Accept: application/json` is sent.
 - Type-safe `c.render(page, props)` maps well to the spec's need for reliable action-item shapes.
-- A coding agent has fewer moving parts to reason about: one route computes one page's prioritized action items.
+- A coding agent has fewer moving parts to reason about: one route computes one page's action items.
 
 Product pages:
 
@@ -349,7 +349,7 @@ Product pages:
 /                   → public landing page, or redirect to /dashboard when signed in
 /login              → GitHub OAuth redirect
 /callback           → GitHub OAuth callback
-/dashboard          → P0/P1/P2/P3 grouped action items + compact news/overview
+/dashboard          → reverse-chronological inbox + compact counts
 /runs               → background scan runs, rate-limit state, queue/DLQ status
 /logout             → logout mutation
 ```
@@ -367,7 +367,7 @@ Cloudflare's published Best Practices docs change the spec in these ways:
 1. **Generate binding types.** Add `wrangler types` to setup and verification; do not hand-write `Env` because it drifts from Wrangler config.
 2. **Keep compatibility date current.** New project config should set a current `compatibility_date`; update deliberately.
 3. **Use secrets correctly.** `GITHUB_CLIENT_SECRET`, `SESSION_SECRET`, and any token material must use Cloudflare secrets, not source or config.
-4. **Use D1 indexes deliberately.** Index dashboard and processing predicates: `action_items(priority, updated_at)`, `action_items(kind, updated_at)`, `github_changes(processing_status, updated_at)`, `github_changes(canonical_subject_key)`, `scan_runs(started_at)`, `sessions(expires_at)`.
+4. **Use D1 indexes deliberately.** Index dashboard and processing predicates: `action_items(kind, updated_at)`, `github_changes(processing_status, updated_at)`, `github_changes(canonical_subject_key)`, `scan_runs(started_at)`, `sessions(expires_at)`.
 5. **Run `PRAGMA optimize` after creating indexes.** Include it in migration/maintenance docs.
 6. **Use `EXPLAIN QUERY PLAN` for core dashboard queries.** The dashboard must not become slow because D1 scans everything.
 7. **Retry transient D1 writes.** Cron and Queue consumers should retry retryable D1 write failures with exponential backoff and jitter.
@@ -437,14 +437,9 @@ Visible by default:
 | Scan status badge | Shows `fresh`, `running`, `failed`, or `stale`. | yes | One badge, not a full dashboard. |
 | Rate-limit remaining/reset | Explains missing/stale results when GitHub limits bite. | yes | Small text; no charts. |
 | Manual refresh button | Lets owner force the cron path now. | yes | Calls same discovery path as cron. |
-| P0 section | Direct blockers and broken authored work. | yes | Always expanded. |
-| P1 section | Direct mentions/conversations. | yes | Expanded if non-empty. |
-| P2 section | Maintenance / loop-closure debt. | yes | Collapsed or compact if noisy. |
 | News/feed section | Small recent activity feed for the owner. | yes | Keep small: 5–10 items, no infinite scroll. |
-| P3 section | FYI/noise. | yes | Collapsed by default, but included so the owner does not need GitHub Notifications. |
 | Item title | What is this? | yes | Link to GitHub canonical URL. |
 | Repository | Context. | yes | `owner/repo`, small text. |
-| Priority/kind badge | Why surfaced. | yes | Keep a small fixed vocabulary. |
 | Reason sentence | Explains classification. | yes | More useful than raw GitHub state. |
 | Suggested action | The point of the app. | yes | One sentence: “Fix failing checks,” “Review PR,” etc. |
 | Evidence summary | Minimal proof: checks, review state, conflict, assigned, etc. | yes | 1–3 chips max. |
@@ -496,45 +491,18 @@ Guard debug routes behind Cloudflare Access and/or a dev flag.
 
 ## Actionable GitHub surfaces
 
-The dashboard should start from GitHub's own personal work views and add prioritization.
+The dashboard should start from GitHub's own personal work views and show a clear inbox.
 
 ### Baseline personal views to mirror
 
-| GitHub surface | Product interpretation | Priority |
 |---|---|---:|
-| `/issues/created` | Issues I opened that now need closure, response, or archiving. | P1/P2 |
-| `/issues/mentioned` | Threads where someone mentioned me. | P1 |
-| `/issues/assigned` | Issues/PRs assigned to me. | P0/P1 |
-| `/pulls` | PRs involving me: authored, review-requested, assigned, or recently updated. | P0/P1/P2 |
 
 ### Other actionable GitHub items
 
 These are all in product scope. The product goal is that the owner should not need to look at GitHub Notifications again.
 
-| Surface | Why actionable | Default priority | Scope |
+| Surface | Why actionable | Scope |
 |---|---|---:|---:|
-| Review requests on PRs | Someone is waiting for my review. | P0/P1 | core |
-| Assigned issues | Explicitly assigned to me. | P0/P1 | core |
-| Assigned PRs | Explicitly assigned to me, often ownership signal. | P0/P1 | core |
-| Mentions | Someone pulled me into a thread. | P1 | core |
-| Authored PRs with failing checks | My work is blocked/broken. | P0 | core |
-| Authored PRs with merge conflicts | My work cannot merge. | P0 | core |
-| Authored PRs with requested changes | I owe a response/fix. | P0 | core |
-| Authored PRs with pending review | My work is waiting; may need nudge/close. | P2 | core |
-| Authored PRs green but unmerged | Loop closure debt. | P1/P2 | core |
-| Created issues with recent comments | I opened the loop; may need response/closure. | P1/P2 | core |
-| Participating threads with new activity | I am already involved. | P1/P2 | core |
-| Repository invitations | Requires accept/decline. | P0 | core |
-| Organization invitations/memberships | Requires accept/confirm. | P0 | core |
-| Dependabot alerts | Security/update action may be needed. | P0/P1 | core |
-| Code scanning alerts | Security/correctness action may be needed. | P0/P1 | core |
-| Secret scanning alerts | Urgent security action. | P0 | core |
-| Failed workflow runs on owned/active repos | Build/deploy broken. | P0/P1 | core |
-| Discussions mentioning me | Social/support follow-up. | P1/P2 | core |
-| Releases waiting on draft/publish | Ship loop may be open. | P2 | core |
-| Stale branches / open draft PRs | Cleanup/closure debt. | P2/P3 | core |
-| Sponsorship/funding notifications | Possibly actionable. | P3 | core/collapsed |
-| Stars/follows/forks | Usually weakly actionable, but useful ambient news. | P3 | collapsed |
 
 ### Small news/feed section
 
@@ -586,7 +554,7 @@ PUBLIC / SIGNED OUT
 SIGNED-IN OWNER
 ┌─────────────────────────────────────────────────────────────┐
 │ GET /dashboard                                              │
-│ Main product: overview counts, P0/P1/P2/P3 action sections, │
+│ Main product: overview counts and reverse-chronological inbox, │
 │ compact news feed, freshness, rate limit, refresh, ignore.   │
 └─────────────────────────────────────────────────────────────┘
              │
@@ -625,7 +593,7 @@ Cuts/simplifications that remain:
 5. **No charts/trends** — not an analytics product.
 6. **No full comments/PR body rendering** — link to GitHub instead.
 7. **No granular queue dashboard** — `/runs` shows freshness, counts, status, last error.
-8. **Keep P3 data collapsed** — ingest it, but do not let it dominate the dashboard.
+8. **Keep ambient data quiet** — ingest it only when it helps the inbox.
 9. **Progressive enrichment** — discover everything daily, then enrich expensive/permission-heavy signals incrementally.
 10. **No KV binding** — D1 stores OAuth state, sessions, scan state, and product data.
 
@@ -657,13 +625,10 @@ The absolute simplest useful UI is:
     authored/open PRs
     review requests
 
-  P0 Waiting on me / broken authored work
     item rows with title, repo, reason, action, evidence chips, GitHub link, ignore
 
-  P1 Direct conversations
     same row shape
 
-  P2 Loop-closure debt
     same row shape, collapsed if > N
 
   News for me
@@ -674,7 +639,6 @@ That is enough to validate the product.
 
 ## Action categories
 
-### P0 — Directly blocking me or waiting on me
 
 Show first.
 
@@ -688,7 +652,6 @@ Show first.
 - repository invitations / org invitations
 - security alerts assigned to or visible to me, if API access allows
 
-### P1 — Direct mention / direct conversation
 
 Show next.
 
@@ -698,7 +661,6 @@ Show next.
 - unread notifications where reason is `assign`
 - threads I am participating in with new activity
 
-### P2 — My open work needs maintenance
 
 Show as maintenance backlog.
 
@@ -710,7 +672,6 @@ Show as maintenance backlog.
 - active repos missing an obvious verification command in README/package scripts/CI
 - repos with repeated recent `fix`, `stabilize`, `guard`, `schema drift`, or `harden` commits suggesting reality was discovered late
 
-### P3 — FYI / subscribed noise
 
 Show collapsed by default.
 
@@ -784,16 +745,6 @@ Fields to keep:
 Action mapping:
 
 ```txt
-reason=review_requested → P0/P1
-reason=assign → P0/P1
-reason=mention → P1
-reason=team_mention → P1
-reason=security_alert → P0 if actionable
-reason=ci_activity → P0 if my PR/check failed, else P2/P3
-reason=author → P2 if my authored thread changed
-reason=comment → P1 if participating, else P3
-reason=subscribed → P3
-reason=state_change → P2/P3 depending on authored/assigned status
 ```
 
 ### 2. Assigned issues and PRs
@@ -817,8 +768,6 @@ Fields:
 Action mapping:
 
 ```txt
-assigned open issue → P0
-assigned open PR → P0
 ```
 
 ### 3. Search: review requests
@@ -839,7 +788,6 @@ GET /search/issues?q=is:open+is:pr+review-requested:<username>
 Action mapping:
 
 ```txt
-review requested from me → P0
 ```
 
 ### 4. Search: authored open PRs
@@ -853,8 +801,6 @@ GET /search/issues?q=is:open+is:pr+author:<username>
 Action mapping:
 
 ```txt
-authored open PR with failing checks/requested changes/conflict → P0
-authored open PR pending review/stale → P2
 ```
 
 For each result, fetch PR details if needed:
@@ -889,9 +835,6 @@ GET /repos/{owner}/{repo}/commits/{ref}/status
 Action mapping:
 
 ```txt
-conclusion=failure|timed_out|cancelled|action_required → P0
-status=pending for long duration → P2
-all success but no review → P2
 ```
 
 ### 6. PR reviews
@@ -905,9 +848,6 @@ GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
 Action mapping:
 
 ```txt
-latest review state=CHANGES_REQUESTED on my PR → P0
-latest review state=APPROVED but checks failing → P0
-latest review state=COMMENTED → P1/P2 depending directness
 ```
 
 ### 7. Mentions and involvement search
@@ -923,8 +863,6 @@ GET /search/issues?q=is:open+commenter:<username>
 Action mapping:
 
 ```txt
-mentions me recently → P1
-involves me but not direct → P2/P3
 ```
 
 ### 8. Recent commit/repo activity for agentic work debt
@@ -957,7 +895,6 @@ Action mapping:
 Use this for lightweight, opt-in detection of missing verification commands, not for enforcing project-specific documentation conventions.
 
 
-For repos on the active/high-priority allowlist, inspect a small set of files.
 
 Endpoints:
 
@@ -972,8 +909,6 @@ GET /repos/{owner}/{repo}/contents/productized-learning.md
 Derived signals:
 
 ```txt
-missing obvious verify/test command → P1/P2 depending repo importance
-missing CI workflow in active repo → P2
 ```
 
 Action mapping:
@@ -1067,13 +1002,13 @@ The queue consumer turns raw changes into action items:
 process-github-change
   → load github_changes row
   → fetch extra PR/check/review details only if needed
-  → classify priority P0/P1/P2/P3
+  → classify action kind
   → upsert action_items
   → write item_evidence
   → mark change processed/ignored/failed
 ```
 
-This means discovery and classification can evolve independently. If the priority model changes, old `github_changes` can be reprocessed.
+This means discovery and classification can evolve independently. If classification changes, old `github_changes` can be reprocessed.
 
 #### Minimal D1 tables
 
@@ -1109,8 +1044,6 @@ CREATE INDEX IF NOT EXISTS idx_github_changes_status_updated
 CREATE UNIQUE INDEX IF NOT EXISTS idx_github_changes_canonical_subject
   ON github_changes(canonical_subject_key, source_endpoint, updated_at);
 
-CREATE INDEX IF NOT EXISTS idx_action_items_priority_updated
-  ON action_items(priority, updated_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_action_items_kind_updated
   ON action_items(kind, updated_at DESC);
@@ -1186,7 +1119,6 @@ GET /user/repository_invitations
 Action mapping:
 
 ```txt
-pending repo invitation → P0
 ```
 
 ### Organization memberships / invitations
@@ -1200,7 +1132,6 @@ GET /user/memberships/orgs
 Action mapping:
 
 ```txt
-pending org membership/invitation → P0
 ```
 
 ### Dependabot / code scanning / secret scanning alerts
@@ -1218,7 +1149,6 @@ GET /repos/{owner}/{repo}/secret-scanning/alerts
 Action mapping:
 
 ```txt
-open high/critical alert in repo I own/maintain → P0/P1
 ```
 
 ## Output model
@@ -1228,7 +1158,6 @@ Normalize every item into one shape:
 ```ts
 type GitHubActionItem = {
   id: string;
-  priority: "P0" | "P1" | "P2" | "P3";
   kind:
     | "review_requested"
     | "assigned"
@@ -1267,11 +1196,9 @@ type GitHubActionItem = {
 };
 ```
 
-## Ranking rules
 
 Sort by:
 
-1. priority P0 → P3
 2. directness:
    - assigned/review requested
    - authored PR broken
@@ -1324,7 +1251,7 @@ Expensive/permission-heavy signals can be discovered first and deeply enriched l
 No multi-page dashboard beyond homepage/dashboard/runs if needed
 ```
 
-Daily discovery starts with all personal-action sources, but processes them in priority order:
+Daily discovery starts with personal-action sources:
 
 1. `GET /notifications?all=false`
 2. `GET /user/issues?filter=assigned&state=open`
@@ -1337,17 +1264,13 @@ Daily discovery starts with all personal-action sources, but processes them in p
 9. failed workflow runs for owned/active repos
 10. Dependabot/code/secret scanning alerts where permissions allow
 11. discussions mentions where permissions/API shape allow
-13. low-priority ambient notifications such as stars/forks/follows/sponsorship events
+13. ambient notifications such as stars/forks/follows/sponsorship events
 
 Processing may be shallow on the first pass. The important rule is: discover all potentially relevant GitHub changes daily so the owner does not need GitHub Notifications as a backstop.
 
 Render from D1 snapshot:
 
 ```txt
-P0: Waiting on me / broken authored work
-P1: Direct conversations / active verification gaps
-P2: My open work / loop-closure debt
-P3: FYI
 ```
 
 
@@ -1412,7 +1335,6 @@ The UI should show scan freshness and queue health so stale data does not masque
 - Stores GitHub tokens/credentials only in the deployer's own Cloudflare environment.
 - Shows no more than 20 default items.
 - Every item has a suggested action.
-- Collapses P3 by default.
 - Deduplicates notifications and search results pointing to the same issue/PR.
 - Does not require broad write scopes.
 - Can run read-only.
@@ -1467,9 +1389,7 @@ But notifications, search results, and PR APIs may point to the same underlying 
 
 Reality check: capture raw payloads from all v1 endpoints and build a dedupe table showing which fields overlap.
 
-### 3. Priority classification
 
-Open issue: how reliably can raw GitHub state map to P0/P1/P2/P3?
 
 Known tricky cases:
 
@@ -1575,7 +1495,6 @@ Each candidate gets:
 {
   "candidateId": "...",
   "isActionable": true,
-  "expectedPriority": "P0",
   "expectedKind": "authored_pr_failing",
   "reason": "Authored PR has failing required check",
   "suggestedAction": "Fix failing checks"
@@ -1594,8 +1513,6 @@ raw fixtures → github_changes → action_items
 
 Assertions:
 
-- expected P0 items appear;
-- obvious noise is absent or P3;
 - duplicate PRs from notifications/search collapse into one item;
 - suggested action matches label;
 - missing/unknown mergeable state is represented honestly.
@@ -1634,7 +1551,7 @@ Record mismatches in a `scan_run` note:
 false positives
 false negatives
 duplicates
-wrong priority
+wrong action kind
 wrong suggested action
 missing evidence
 GitHub API limitation
@@ -1674,7 +1591,7 @@ Before adding features, prove the deploy path:
 
 ## Open questions
 
-- Which repos/orgs should be considered high priority?
+- Which repos/orgs should be included?
 - Should archived repos be ignored?
 - Should bots be collapsed or hidden?
 - Should old authored PRs be treated as action items or archive?

@@ -51,12 +51,12 @@ describe('Sunrise app routes', () => {
     await db.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, 0, 0)')
       .bind('run1', 'manual', 'succeeded', '2026-04-30T00:00:00Z', 0, 0).run();
     await db.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', '2026-04-30T00:00:00Z', 3, 'run1').run();
-    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
-      .bind('i1', 'k1', 'P0', 'review_requested', 'Review the launch PR', 'o/r', 'https://github.com/o/r/pull/1', '2026-04-30T00:00:00Z', 'You were requested for review.', 'Review PR', '{}', 'notifications').run();
-    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
-      .bind('i2', 'k2', 'P2', 'authored_pr_pending', 'My PR to another repo', 'someone/project', 'https://github.com/someone/project/pull/2', '2026-04-29T00:00:00Z', 'Your authored PR is waiting on pending checks or review.', 'Nudge reviewers or update PR', '{"isOwnRepo":false,"isAuthored":true}', 'search').run();
-    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
-      .bind('i3', 'k3', 'P2', 'repo_pr', 'External PR to my repo', 'ade/r', 'https://github.com/ade/r/pull/8', '2026-04-28T00:00:00Z', 'An open PR targets one of your repositories.', 'Review or triage this PR', '{"isOwnRepo":true,"isAuthored":false}', 'search').run();
+    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+      .bind('i1', 'k1', 'review_requested', 'Review the launch PR', 'o/r', 'https://github.com/o/r/pull/1', '2026-04-30T00:00:00Z', 'You were requested for review.', 'Review PR', '{}', 'notifications').run();
+    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+      .bind('i2', 'k2', 'authored_pr_pending', 'My PR to another repo', 'someone/project', 'https://github.com/someone/project/pull/2', '2026-04-29T00:00:00Z', 'Your authored PR is waiting on pending checks or review.', 'Nudge reviewers or update PR', '{"isOwnRepo":false,"isAuthored":true}', 'search').run();
+    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+      .bind('i3', 'k3', 'repo_pr', 'External PR to my repo', 'ade/r', 'https://github.com/ade/r/pull/8', '2026-04-28T00:00:00Z', 'An open PR targets one of your repositories.', 'Review or triage this PR', '{"isOwnRepo":true,"isAuthored":false}', 'search').run();
     const res = await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
     const html = await res.text();
     expect(html).toContain('class="dashboard-layout"');
@@ -65,8 +65,7 @@ describe('Sunrise app routes', () => {
     expect(html).not.toContain('<strong>Inbox</strong>');
     expect(html).not.toContain('GitHub inbox');
     expect(html).not.toContain('<strong>Dashboard</strong>');
-    expect(html).not.toContain('<p class="eyebrow">P0</p>');
-    expect(html).toContain('class="marginalia"');
+        expect(html).toContain('class="marginalia"');
     expect(html).toContain('Review the launch PR');
     expect(html).toContain('class="item-time"');
     expect(html.indexOf('class="item-time"')).toBeLessThan(html.indexOf('Review the launch PR'));
@@ -102,8 +101,8 @@ describe('Sunrise app routes', () => {
   it('serves dashboard through the Inertia protocol without changing the HTML view', async () => {
     const db = createMemoryDb();
     await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
-    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
-      .bind('i1', 'k1', 'P0', 'review_requested', 'Review the launch PR', 'o/r', 'https://github.com/o/r/pull/1', '2026-04-30T00:00:00Z', 'You were requested for review.', 'Review PR', '{}', 'notifications').run();
+    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+      .bind('i1', 'k1', 'review_requested', 'Review the launch PR', 'o/r', 'https://github.com/o/r/pull/1', '2026-04-30T00:00:00Z', 'You were requested for review.', 'Review PR', '{}', 'notifications').run();
 
     const htmlRes = await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
     const html = await htmlRes.text();
@@ -121,8 +120,8 @@ describe('Sunrise app routes', () => {
     const db = createMemoryDb();
     await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
     for (let i = 0; i < 55; i++) {
-      await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
-        .bind(`i${i}`, `k${i}`, i < 2 ? 'P0' : 'P3', 'notification', `Item ${i}`, 'o/r', 'https://github.com/o/r/issues/1', `2026-04-${String(30 - Math.floor(i / 24)).padStart(2, '0')}T${String(23 - (i % 24)).padStart(2, '0')}:00:00Z`, 'Reason', 'Do it', '{}', 'notifications').run();
+      await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+        .bind(`i${i}`, `k${i}`, 'notification', `Item ${i}`, 'o/r', 'https://github.com/o/r/issues/1', `2026-04-${String(30 - Math.floor(i / 24)).padStart(2, '0')}T${String(23 - (i % 24)).padStart(2, '0')}:00:00Z`, 'Reason', 'Do it', '{}', 'notifications').run();
     }
     const res = await app.request('/dashboard?json', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
     expect(res.status).toBe(200);
@@ -142,8 +141,8 @@ describe('Sunrise app routes', () => {
     await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
     const generated = Array.from({ length: 30 }, (_, i) => ({ repo: i % 2 === 0 ? `ade/project-${i}` : `other/project-${i}`, own: i % 2 === 0 }));
     for (const [i, item] of generated.entries()) {
-      await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
-        .bind(`pr${i}`, `pr-k${i}`, 'P2', 'authored_pr_pending', `PR ${i}`, item.repo, `https://github.com/${item.repo}/pull/${i}`, `2026-04-30T${String(23 - (i % 24)).padStart(2, '0')}:00:00Z`, 'Pending', 'Nudge reviewers', '{}', 'search').run();
+      await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+        .bind(`pr${i}`, `pr-k${i}`, 'authored_pr_pending', `PR ${i}`, item.repo, `https://github.com/${item.repo}/pull/${i}`, `2026-04-30T${String(23 - (i % 24)).padStart(2, '0')}:00:00Z`, 'Pending', 'Nudge reviewers', '{}', 'search').run();
     }
 
     const json = await app.request('/dashboard?json', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);

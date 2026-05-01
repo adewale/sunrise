@@ -12,8 +12,8 @@ async function signedInDb() {
 describe('route prop contracts', () => {
   it('returns stable dashboard props for agents and UI', async () => {
     const db = await signedInDb();
-    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
-      .bind('i1', 'k1', 'P0', 'review_requested', 'Review me', 'o/r', 'https://github.com/o/r/pull/1', '2026-05-01T00:00:00Z', 'Review requested', 'Review PR', '{}', 'notifications').run();
+    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+      .bind('i1', 'k1', 'review_requested', 'Review me', 'o/r', 'https://github.com/o/r/pull/1', '2026-05-01T00:00:00Z', 'Review requested', 'Review PR', '{}', 'notifications').run();
     const res = await app.request('/dashboard?json', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
     const props = await res.json() as any;
     expect(props).toMatchObject({ product: 'Sunrise', signedInAs: 'ade' });

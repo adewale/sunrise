@@ -67,10 +67,10 @@ export async function processGithubChange(env: Env, msg: ProcessGitHubChangeMess
       raw: JSON.parse(row.raw_json || '{}'),
     }, env.OWNER_LOGIN ?? '');
     if (item) {
-      await retryD1(() => env.DB.prepare(`INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
-        ON CONFLICT(canonical_subject_key) DO UPDATE SET priority = excluded.priority, kind = excluded.kind, title = excluded.title, repo = excluded.repo, url = excluded.url, updated_at = excluded.updated_at, reason = excluded.reason, suggested_action = excluded.suggested_action, evidence_json = excluded.evidence_json, source = excluded.source`)
-        .bind(item.id, item.canonicalSubjectKey, item.priority, item.kind, item.title, item.repo, item.url, item.updatedAt, item.reason, item.suggestedAction, JSON.stringify(item.evidence ?? {}), item.source).run());
+      await retryD1(() => env.DB.prepare(`INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        ON CONFLICT(canonical_subject_key) DO UPDATE SET kind = excluded.kind, title = excluded.title, repo = excluded.repo, url = excluded.url, updated_at = excluded.updated_at, reason = excluded.reason, suggested_action = excluded.suggested_action, evidence_json = excluded.evidence_json, source = excluded.source`)
+        .bind(item.id, item.canonicalSubjectKey, item.kind, item.title, item.repo, item.url, item.updatedAt, item.reason, item.suggestedAction, JSON.stringify(item.evidence ?? {}), item.source).run());
       await retryD1(() => env.DB.prepare('INSERT INTO item_evidence (id, action_item_id, evidence_json, created_at) VALUES (?, ?, ?, ?)').bind(crypto.randomUUID(), item.id, JSON.stringify(item.evidence ?? {}), new Date().toISOString()).run());
     }
     await retryD1(() => env.DB.prepare("UPDATE github_changes SET processing_status = 'processed', attempt_count = attempt_count + 1, last_error = NULL WHERE id = ?").bind(msg.changeId).run());

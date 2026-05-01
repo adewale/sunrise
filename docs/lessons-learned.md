@@ -223,7 +223,7 @@ The better hierarchy is:
 3. repo and source, because they explain context;
 4. title/reason/action, because those support the decision.
 
-A Tuftean layout works best when the date/time forms a quiet left rail. This lets the eye skim vertically without decoding chips or prose first. Avoid priority buckets unless the classifier is mature enough to be trusted; inaccurate prioritization is worse than simple reverse chronology.
+A Tuftean layout works best when the date/time forms a quiet left rail. This lets the eye skim vertically without decoding chips or prose first. Reverse chronology is easier to trust than classifier-driven grouping.
 
 ## 17. Do not let page vocabulary drift
 

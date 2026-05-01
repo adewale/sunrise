@@ -18,8 +18,8 @@ describe('Playwright smoke checks', () => {
 
       const db = createMemoryDb();
       await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
-      await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
-        .bind('i1', 'k1', 'P0', 'review_requested', 'Review me', 'o/r', 'https://github.com/o/r/pull/1', '2026-05-01T00:00:00Z', 'Review requested', 'Review PR', '{}', 'notifications').run();
+      await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+        .bind('i1', 'k1', 'review_requested', 'Review me', 'o/r', 'https://github.com/o/r/pull/1', '2026-05-01T00:00:00Z', 'Review requested', 'Review PR', '{}', 'notifications').run();
       const dashboardHtml = await (await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env)).text();
       const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
       await mobile.setContent(dashboardHtml);

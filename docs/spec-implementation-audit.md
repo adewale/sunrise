@@ -41,7 +41,7 @@ This audit compares `specs/sunrise-github-dashboard-spec.md` with the current im
 These are not treated as bugs; the spec should be read with these product decisions in mind.
 
 - The primary owner view is an **Inbox**, not a generic dashboard.
-- The inbox is reverse-chronological rather than grouped visually by P0/P1/P2/P3.
+- The inbox is reverse-chronological.
 - Priority still exists in the classifier/data model as evidence, but it is not the main visual organizing principle.
 - The right column is Tuftean marginalia for counts, not a second dashboard surface.
 - The separate right-side freshness panel was removed; freshness is compact header metadata.
@@ -80,12 +80,6 @@ Still missing or incomplete from the larger spec:
 - Created issues with recent comments are discovered but not deeply enriched for “needs owner response” semantics.
 - Repo-local verification command detection only checks for `package.json` existence, not script semantics yet.
 - Manual labeling of 50 real candidates and classifier comparison has scaffolding but not a completed labeled corpus.
-
-### Priority/ranking
-
-- The classifier still calculates P0/P1/P2/P3, but the UI no longer presents priority sections.
-- `renderDesignLanguage()` still includes a P0 sample badge/priority styling, so design docs retain older dashboard language.
-- Priority should be reframed in the spec as internal severity metadata unless visual grouping returns.
 
 ### Debug/security policy
 

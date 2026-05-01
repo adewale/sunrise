@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyChange, dedupeActionItems, rankActionItems } from '../src/classifier';
+import { classifyChange, dedupeActionItems, orderActionItems } from '../src/classifier';
 import type { GitHubChange } from '../src/types';
 
 const base = {
@@ -16,9 +16,9 @@ const base = {
 } satisfies GitHubChange;
 
 describe('classifier', () => {
-  it('maps review-request notifications to P0 action items with suggested action', () => {
+  it('maps review-request notifications to action items with suggested action', () => {
     const item = classifyChange({ ...base, raw: { reason: 'review_requested', title: 'Please review' } }, 'ade');
-    expect(item).toMatchObject({ priority: 'P0', kind: 'review_requested', suggestedAction: 'Review this PR' });
+    expect(item).toMatchObject({ kind: 'review_requested', suggestedAction: 'Review this PR' });
   });
 
   it('maps authored PR failures, conflicts, and requested changes', () => {
@@ -27,22 +27,22 @@ describe('classifier', () => {
     expect(classifyChange({ ...base, sourceEndpoint: 'reviews', raw: { title: 'Changes', author: 'ade', latestReviewState: 'CHANGES_REQUESTED' } }, 'ade')?.kind).toBe('authored_pr_changes_requested');
   });
 
-  it('deduplicates same canonical subject from notifications and search keeping highest ranked item', () => {
+  it('deduplicates same canonical subject from notifications and search keeping the more direct item', () => {
     const dupes = [
       classifyChange({ ...base, id: 'n', raw: { reason: 'mention', title: 'Mention' } }, 'ade')!,
       classifyChange({ ...base, id: 's', sourceEndpoint: 'search/review-requests', raw: { reason: 'review_requested', title: 'Review' } }, 'ade')!,
     ];
     const deduped = dedupeActionItems(dupes);
     expect(deduped).toHaveLength(1);
-    expect(deduped[0].priority).toBe('P0');
+    expect(deduped[0].kind).toBe('review_requested');
   });
 
-  it('ranks by priority, directness, loop-closure risk, then recency', () => {
+  it('orders by directness, then recency', () => {
     const items = [
-      classifyChange({ ...base, id: 'old-p2', canonicalSubjectKey: 'a', raw: { reason: 'author', title: 'Author' } }, 'ade')!,
-      classifyChange({ ...base, id: 'p0', canonicalSubjectKey: 'b', raw: { reason: 'assign', title: 'Assigned' } }, 'ade')!,
-      classifyChange({ ...base, id: 'p1', canonicalSubjectKey: 'c', updatedAt: '2026-05-01T10:00:00Z', raw: { reason: 'mention', title: 'Mention' } }, 'ade')!,
+      classifyChange({ ...base, id: 'old-author', canonicalSubjectKey: 'a', raw: { reason: 'author', title: 'Author' } }, 'ade')!,
+      classifyChange({ ...base, id: 'assigned', canonicalSubjectKey: 'b', raw: { reason: 'assign', title: 'Assigned' } }, 'ade')!,
+      classifyChange({ ...base, id: 'mention', canonicalSubjectKey: 'c', updatedAt: '2026-05-01T10:00:00Z', raw: { reason: 'mention', title: 'Mention' } }, 'ade')!,
     ];
-    expect(rankActionItems(items).map((i) => i.id)).toEqual(['p0', 'p1', 'old-p2']);
+    expect(orderActionItems(items).map((i) => i.id)).toEqual(['assigned', 'mention', 'old-author']);
   });
 });

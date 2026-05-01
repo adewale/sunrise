@@ -1,5 +1,3 @@
-export type Priority = 'P0' | 'P1' | 'P2' | 'P3';
-
 export type ActionKind =
   | 'review_requested'
   | 'assigned'
@@ -21,7 +19,6 @@ export type ActionSource = 'notifications' | 'search' | 'pulls' | 'checks' | 're
 export type GitHubActionItem = {
   id: string;
   canonicalSubjectKey: string;
-  priority: Priority;
   kind: ActionKind;
   title: string;
   repo: string;

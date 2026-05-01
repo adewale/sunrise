@@ -8,12 +8,7 @@ export type ActionKind =
   | 'authored_pr_changes_requested'
   | 'authored_pr_conflict'
   | 'authored_pr_pending'
-  | 'authored_pr_unverified'
   | 'stale_green_pr'
-  | 'repo_missing_agent_instructions'
-  | 'repo_missing_verify_command'
-  | 'high_wip_warning'
-  | 'commit_velocity_warning'
   | 'invitation'
   | 'security_alert'
   | 'workflow_failure'
@@ -38,11 +33,6 @@ export type GitHubActionItem = {
     checks?: 'success' | 'failure' | 'pending' | 'missing';
     mergeable?: 'mergeable' | 'conflicting' | 'unknown';
     hasVerificationSummary?: boolean;
-    hasAgentInstructions?: boolean;
-    hasVerifyCommand?: boolean;
-    recentCommitCount?: number;
-    recentFixCommitCount?: number;
-    activeRepoCount?: number;
     author?: string;
     repoOwner?: string;
     isOwnRepo?: boolean;

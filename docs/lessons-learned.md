@@ -329,7 +329,7 @@ DLQ count needs Cloudflare API credentials or another explicit operational integ
 
 ## 24. Check runs, statuses, and reviews are complementary
 
-A PR can have legacy statuses, modern check runs, reviews, mergeability, and body/comment verification evidence. No single endpoint is enough.
+A PR can have legacy statuses, modern check runs, reviews, and mergeability. No single endpoint is enough.
 
 For authored PR enrichment, combine:
 
@@ -344,20 +344,8 @@ Then classify failures conservatively:
 
 - failing/timed out/cancelled/action required → broken authored work;
 - pending/incomplete → waiting;
-- success without verification evidence → loop-closure risk.
 
-## 25. Repo-readiness checks should inspect semantics, not file presence
-
-Checking that `package.json` exists is not a verification check. The useful question is whether a human or agent can find one obvious command.
-
-Better first pass:
-
-- fetch and decode `package.json`;
-- inspect `scripts`;
-- accept `verify`, `test`, `check`, `build`, or `lint`;
-- later: inspect Makefile, justfile, taskfile, README, and CI config.
-
-## 26. Least-privilege OAuth should be the default, not the demo path
+## 25. Least-privilege OAuth should be the default, not the demo path
 
 The default OAuth scope should support public-data use and owner sign-in:
 
@@ -373,7 +361,7 @@ read:user user:email notifications repo
 
 Do not expose a broad `repo` prompt in Deploy to Cloudflare onboarding unless the user clearly asks for private repository coverage. Document endpoint-by-endpoint behavior under both scope sets.
 
-## 27. Fixture capture is not the same as manual labeling
+## 26. Fixture capture is not the same as manual labeling
 
 A capture script gives shape coverage; it does not prove classifier correctness. The spec's 50-candidate requirement needs human labels.
 
@@ -385,7 +373,7 @@ Keep three assets separate:
 
 A template with 50 rows is useful, but it is still a to-do until a real owner labels real candidates.
 
-## 28. Query plans should be checked before performance hurts
+## 27. Query plans should be checked before performance hurts
 
 The reverse-chronological inbox query initially produced:
 

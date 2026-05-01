@@ -28,25 +28,6 @@ describe('GitHub enrichment fixtures', () => {
     expect(items.results.map((r) => r.kind)).toContain('authored_pr_failing');
   });
 
-  it('detects repo verification scripts semantically instead of accepting any package.json', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      const u = String(url);
-      if (u.includes('/notifications')) return Response.json([]);
-      if (u.includes('/search/issues')) return search([]);
-      if (u.includes('/user/repos')) return Response.json([{ full_name: 'ade/noverify', owner: { login: 'ade' }, pushed_at: '2026-05-01T00:00:00Z' }, { full_name: 'ade/verify', owner: { login: 'ade' }, pushed_at: '2026-05-01T00:00:00Z' }]);
-      if (u.includes('/repos/ade/noverify/contents/AGENTS.md') || u.includes('/repos/ade/verify/contents/AGENTS.md')) return Response.json({ ok: true });
-      if (u.includes('/repos/ade/noverify/contents/package.json')) return Response.json({ content: btoa(JSON.stringify({ scripts: { start: 'node index.js' } })) });
-      if (u.includes('/repos/ade/verify/contents/package.json')) return Response.json({ content: btoa(JSON.stringify({ scripts: { verify: 'npm test' } })) });
-      if (u.includes('/rate_limit')) return Response.json({ resources: { core: { remaining: 4999, reset: 1770000000 } } });
-      return Response.json([]);
-    }));
-    const db = createMemoryDb();
-    await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
-    const changes = await db.prepare('SELECT * FROM github_changes').all<Record<string, any>>();
-    const readiness = changes.results.filter((r) => r.source_endpoint === 'contents/repo-readiness');
-    expect(readiness.some((r) => r.repo === 'ade/noverify' && r.raw_json.includes('hasVerifyCommand'))).toBe(true);
-    expect(readiness.some((r) => r.repo === 'ade/verify' && r.raw_json.includes('hasVerifyCommand'))).toBe(false);
-  });
 });
 
 function prIssue(title: string, htmlUrl: string) {

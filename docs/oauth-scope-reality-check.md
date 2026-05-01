@@ -31,7 +31,6 @@ Set with `GITHUB_OAUTH_SCOPES` only when the owner wants private repository disc
 | repository invitations | partial | yes | Depends on GitHub API permissions/account state. |
 | org memberships | partial | yes | Depends on org visibility. |
 | Dependabot/code/secret scanning alerts | often no | yes plus repo/admin visibility | GitHub may still require repo-specific permissions or security access. |
-| repo contents readiness checks | public only | yes | Private contents require `repo`. |
 
 ## Reality-check procedure
 

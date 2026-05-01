@@ -21,16 +21,10 @@ describe('classifier', () => {
     expect(item).toMatchObject({ priority: 'P0', kind: 'review_requested', suggestedAction: 'Review this PR' });
   });
 
-  it('maps authored PR failures, conflicts, requested changes, and verification gaps', () => {
+  it('maps authored PR failures, conflicts, and requested changes', () => {
     expect(classifyChange({ ...base, sourceEndpoint: 'search/authored-prs', raw: { title: 'Broken', author: 'ade', checks: 'failure' } }, 'ade')?.kind).toBe('authored_pr_failing');
     expect(classifyChange({ ...base, sourceEndpoint: 'search/authored-prs', raw: { title: 'Conflict', author: 'ade', mergeable: 'conflicting' } }, 'ade')?.kind).toBe('authored_pr_conflict');
     expect(classifyChange({ ...base, sourceEndpoint: 'reviews', raw: { title: 'Changes', author: 'ade', latestReviewState: 'CHANGES_REQUESTED' } }, 'ade')?.kind).toBe('authored_pr_changes_requested');
-    expect(classifyChange({ ...base, sourceEndpoint: 'search/authored-prs', raw: { title: 'Green', author: 'ade', checks: 'success', hasVerificationSummary: false } }, 'ade')?.kind).toBe('authored_pr_unverified');
-  });
-
-  it('identifies repo readiness and WIP loop-closure warnings', () => {
-    expect(classifyChange({ ...base, canonicalSubjectKey: 'repo:owner/repo:readiness:agent', sourceEndpoint: 'contents', subjectType: 'Repository', raw: { title: 'owner/repo missing agent instructions', hasAgentInstructions: false } }, 'ade')?.kind).toBe('repo_missing_agent_instructions');
-    expect(classifyChange({ ...base, canonicalSubjectKey: 'owner:wip', sourceEndpoint: 'commits', subjectType: 'WipSummary', raw: { title: 'Too many active repos', activeRepoCount: 4, wipLimit: 3 } }, 'ade')?.kind).toBe('high_wip_warning');
   });
 
   it('deduplicates same canonical subject from notifications and search keeping highest ranked item', () => {

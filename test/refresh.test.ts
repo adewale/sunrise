@@ -17,7 +17,7 @@ describe('manual refresh lifecycle', () => {
     const location = res.headers.get('location')!;
     expect(location).toContain('/runs?refresh=started');
     expect(location).toContain('runId=');
-    expect(location).toContain('candidates=3');
+    expect(location).toContain('candidates=2');
   });
 
   it('renders running, completed, empty, and failed refresh notices', async () => {

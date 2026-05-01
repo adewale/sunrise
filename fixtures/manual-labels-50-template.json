@@ -82,7 +82,7 @@
   },
   {
     "candidateId": "candidate-010",
-    "source": "contents/repo-readiness",
+    "source": "security/code-scanning",
     "url": "",
     "actionable": null,
     "expectedPriority": null,
@@ -172,7 +172,7 @@
   },
   {
     "candidateId": "candidate-020",
-    "source": "contents/repo-readiness",
+    "source": "security/code-scanning",
     "url": "",
     "actionable": null,
     "expectedPriority": null,
@@ -262,7 +262,7 @@
   },
   {
     "candidateId": "candidate-030",
-    "source": "contents/repo-readiness",
+    "source": "security/code-scanning",
     "url": "",
     "actionable": null,
     "expectedPriority": null,
@@ -352,7 +352,7 @@
   },
   {
     "candidateId": "candidate-040",
-    "source": "contents/repo-readiness",
+    "source": "security/code-scanning",
     "url": "",
     "actionable": null,
     "expectedPriority": null,
@@ -442,7 +442,7 @@
   },
   {
     "candidateId": "candidate-050",
-    "source": "contents/repo-readiness",
+    "source": "security/code-scanning",
     "url": "",
     "actionable": null,
     "expectedPriority": null,

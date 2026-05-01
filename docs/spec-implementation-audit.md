@@ -71,14 +71,13 @@ These are not treated as bugs; the spec should be read with these product decisi
 
 ### GitHub discovery/enrichment
 
-Implemented or partially implemented: notifications, review-requested search, assigned search, authored PRs, authored issues, PRs in owned repos, involved search, discussions mentions, repository invitations, organization memberships, PR review/status enrichment for a bounded authored-PR subset, merge-conflict evidence from PR metadata, failed workflow runs, Dependabot alerts, code scanning alerts, secret scanning alerts, rate-limit snapshots, and repo-readiness probes for AGENTS.md/package.json.
+Implemented or partially implemented: notifications, review-requested search, assigned search, authored PRs, authored issues, PRs in owned repos, involved search, discussions mentions, repository invitations, organization memberships, PR review/status enrichment for a bounded authored-PR subset, merge-conflict evidence from PR metadata, failed workflow runs, Dependabot alerts, code scanning alerts, secret scanning alerts, rate-limit snapshots.
 
 Still missing or incomplete from the larger spec:
 
 - PR check-run enrichment uses statuses/reviews today; full Check Runs API coverage is still incomplete.
-- Workflow/security/repo-readiness discovery is intentionally bounded to recently pushed owned repos and may miss older or org-owned repositories.
+- Workflow/security discovery is intentionally bounded to recently pushed owned repos and may miss older or org-owned repositories.
 - Created issues with recent comments are discovered but not deeply enriched for “needs owner response” semantics.
-- Recent repo activity / high-velocity unfinished-loop detection is not fully implemented.
 - Repo-local verification command detection only checks for `package.json` existence, not script semantics yet.
 - Manual labeling of 50 real candidates and classifier comparison has scaffolding but not a completed labeled corpus.
 

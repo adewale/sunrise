@@ -533,7 +533,6 @@ These are all in product scope. The product goal is that the owner should not ne
 | Discussions mentioning me | Social/support follow-up. | P1/P2 | core |
 | Releases waiting on draft/publish | Ship loop may be open. | P2 | core |
 | Stale branches / open draft PRs | Cleanup/closure debt. | P2/P3 | core |
-| Recent high-velocity repos | WIP/context-switch warning. | P2 | core |
 | Sponsorship/funding notifications | Possibly actionable. | P3 | core/collapsed |
 | Stars/follows/forks | Usually weakly actionable, but useful ambient news. | P3 | collapsed |
 
@@ -684,7 +683,6 @@ Show first.
 - PRs I authored with failing checks
 - PRs I authored with merge conflicts
 - PRs I authored with requested changes
-- PRs I authored with successful checks but no verification evidence / no human-review summary on active repos
 - PRs I authored from agent branches with no clear explanation of what changed and how it was verified
 - stale green PRs in active repos that should be merged or closed
 - repository invitations / org invitations
@@ -709,7 +707,6 @@ Show as maintenance backlog.
 - stale PRs authored by me
 - PRs authored by me pending review for a long time
 - PRs authored by me with pending checks
-- active repos with recent high commit velocity but no recent release, deploy, or merged PR
 - active repos missing an obvious verification command in README/package scripts/CI
 - repos with repeated recent `fix`, `stabilize`, `guard`, `schema drift`, or `harden` commits suggesting reality was discovered late
 
@@ -947,20 +944,12 @@ GET /repos/{owner}/{repo}/actions/runs?per_page=20
 Derived signals:
 
 ```txt
-many commits across many repos in short window → context-switch/WIP warning
 many fix/stabilize/harden commits after feature commits → verification likely late
-recent commits but no open/merged PR → direct-to-main work; check verification evidence
-recent active repo but no release/deploy marker → possible unfinished loop
-agent-looking branch names, e.g. claude/*, codex/*, cursor/* → require explanation + verification summary
 ```
 
 Action mapping:
 
 ```txt
-active repo with high velocity + failing CI → P0/P1
-active repo with high velocity + no verification surface → P1/P2
-active repo with high velocity + no recent release/merge/deploy → P2
-many simultaneous active repos above configured WIP limit → P2 operating-system warning
 ```
 
 ### 9. Repository verification hints (optional)
@@ -990,7 +979,6 @@ missing CI workflow in active repo → P2
 Action mapping:
 
 ```txt
-repo lacks verify command → "Add a single verification command agents can run"
 ```
 
 ### 10. Cron + Queues: daily discovery, queued processing
@@ -1173,9 +1161,7 @@ Do not create a complex queue graph up front:
 // Not v1
 type QueueMessage =
   | { kind: "scan-authored-pr"; ... }
-  | { kind: "scan-repo-readiness"; ... }
   | { kind: "scan-checks"; ... }
-  | { kind: "scan-commit-velocity"; ... };
 ```
 
 Split into specialized message types only after measured pain:
@@ -1251,11 +1237,7 @@ type GitHubActionItem = {
     | "authored_pr_changes_requested"
     | "authored_pr_conflict"
     | "authored_pr_pending"
-    | "authored_pr_unverified"
     | "stale_green_pr"
-    | "repo_missing_verify_command"
-    | "high_wip_warning"
-    | "commit_velocity_warning"
     | "invitation"
     | "security_alert"
     | "notification"
@@ -1270,11 +1252,6 @@ type GitHubActionItem = {
     checks?: "success" | "failure" | "pending" | "missing";
     mergeable?: "mergeable" | "conflicting" | "unknown";
     hasVerificationSummary?: boolean;
-    hasAgentInstructions?: boolean;
-    hasVerifyCommand?: boolean;
-    recentCommitCount?: number;
-    recentFixCommitCount?: number;
-    activeRepoCount?: number;
   };
   source:
     | "notifications"
@@ -1305,12 +1282,10 @@ Sort by:
 3. loop-closure risk:
    - failing/conflicting PRs
    - stale green PRs
-   - high-velocity active repo with no clear release/deploy/merge closure
    - repeated fix/stabilize commits indicating verification debt
 4. recency
 5. repository importance allowlist, if configured
 6. age/staleness for authored PRs
-7. WIP-limit pressure across active repos
 
 ## Suggested action text
 
@@ -1324,11 +1299,7 @@ authored_pr_changes_requested → "Address requested changes"
 authored_pr_conflict → "Rebase or resolve conflicts"
 mention → "Reply to mention"
 pending_review → "Nudge reviewers or update PR"
-authored_pr_unverified → "Add verification summary or run the declared verify command"
 stale_green_pr → "Merge or close this green PR"
-repo_missing_verify_command → "Add one obvious verify command for agents and humans"
-high_wip_warning → "Choose active repos and archive/defer the rest"
-commit_velocity_warning → "Stop and characterize before more feature work"
 security_alert → "Triage security alert"
 invitation → "Accept or decline invitation"
 ```
@@ -1366,7 +1337,6 @@ Daily discovery starts with all personal-action sources, but processes them in p
 9. failed workflow runs for owned/active repos
 10. Dependabot/code/secret scanning alerts where permissions allow
 11. discussions mentions where permissions/API shape allow
-12. releases, draft PRs, stale branches, and WIP signals
 13. low-priority ambient notifications such as stars/forks/follows/sponsorship events
 
 Processing may be shallow on the first pass. The important rule is: discover all potentially relevant GitHub changes daily so the owner does not need GitHub Notifications as a backstop.
@@ -1380,7 +1350,6 @@ P2: My open work / loop-closure debt
 P3: FYI
 ```
 
-Do not over-design separate UI pages for repo/security/checks/commit-readiness integration. Capture those signals, but collapse them until the classifier proves they deserve attention.
 
 Thin UI slice with Hono + Inertia:
 
@@ -1422,7 +1391,6 @@ Render a separate compact section:
 Loop closure:
 - PRs to merge/close
 - PRs to verify/explain
-- WIP limit warning
 ```
 
 Implementation shift in this slice:
@@ -1449,8 +1417,6 @@ The UI should show scan freshness and queue health so stale data does not masque
 - Does not require broad write scopes.
 - Can run read-only.
 - Makes API rate-limit usage visible.
-- Identifies authored PRs that are broken, conflicted, stale-green, or missing verification evidence.
-- Surfaces WIP pressure when recent activity spans more active repos than the configured limit.
 - Separates human/social action items from engineering loop-closure items.
 - Hono/Inertia route can render the default inbox without a separate internal API endpoint.
 - JSON/debug output is available for the same action-item props used by the UI.
@@ -1482,7 +1448,6 @@ participating threads
 repository/org invitations
 security alerts
 failed workflow runs
-recent commit velocity / WIP
 ambient news: stars/forks/follows/sponsorship
 ```
 
@@ -1710,11 +1675,9 @@ Before adding features, prove the deploy path:
 ## Open questions
 
 - Which repos/orgs should be considered high priority?
-- What is the active repo WIP limit? Default candidate: 3.
 - Should archived repos be ignored?
 - Should bots be collapsed or hidden?
 - Should old authored PRs be treated as action items or archive?
-- What counts as verification evidence: check success, PR body checklist, comment, release, deploy URL, screenshot, or all of these?
 - How should the API distinguish healthy rapid iteration from repeated fix-forward churn?
 - Should notifications be marked read by the tool, or remain read-only?
 - Which security-alert APIs are accessible with the chosen owner OAuth/GitHub App permissions?

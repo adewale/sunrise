@@ -7,7 +7,6 @@ const directnessRank: Record<ActionKind, number> = {
   authored_pr_failing: 1,
   authored_pr_conflict: 1,
   authored_pr_changes_requested: 1,
-  authored_pr_unverified: 2,
   stale_green_pr: 2,
   mention: 3,
   security_alert: 0,
@@ -15,10 +14,6 @@ const directnessRank: Record<ActionKind, number> = {
   invitation: 0,
   repo_pr: 2,
   authored_pr_pending: 4,
-  repo_missing_verify_command: 5,
-  repo_missing_agent_instructions: 5,
-  high_wip_warning: 6,
-  commit_velocity_warning: 6,
   maintenance: 7,
   notification: 8,
 };
@@ -32,11 +27,6 @@ export function classifyChange(change: GitHubChange, ownerLogin: string): GitHub
     checks: raw.checks as 'success' | 'failure' | 'pending' | 'missing' | undefined,
     mergeable: raw.mergeable as 'mergeable' | 'conflicting' | 'unknown' | undefined,
     hasVerificationSummary: raw.hasVerificationSummary as boolean | undefined,
-    hasAgentInstructions: raw.hasAgentInstructions as boolean | undefined,
-    hasVerifyCommand: raw.hasVerifyCommand as boolean | undefined,
-    recentCommitCount: raw.recentCommitCount as number | undefined,
-    recentFixCommitCount: raw.recentFixCommitCount as number | undefined,
-    activeRepoCount: raw.activeRepoCount as number | undefined,
     author: raw.author as string | undefined,
     repoOwner: raw.repoOwner as string | undefined,
     isOwnRepo: raw.isOwnRepo as boolean | undefined,
@@ -71,13 +61,7 @@ export function classifyChange(change: GitHubChange, ownerLogin: string): GitHub
   if (isAuthored && raw.mergeable === 'conflicting') return make('P0', 'authored_pr_conflict', 'Your authored PR has merge conflicts.', 'Rebase or resolve conflicts');
   if (isAuthored && raw.latestReviewState === 'CHANGES_REQUESTED') return make('P0', 'authored_pr_changes_requested', 'A reviewer requested changes on your PR.', 'Address requested changes');
   if (isAuthored && raw.checks === 'pending') return make('P2', 'authored_pr_pending', 'Your authored PR is waiting on pending checks or review.', 'Nudge reviewers or update PR');
-  if (isAuthored && raw.checks === 'success' && raw.hasVerificationSummary === false) return make('P0', 'authored_pr_unverified', 'Your authored PR is green but lacks verification evidence.', 'Add verification summary or run the declared verify command');
   if (isAuthored && raw.staleGreen === true) return make('P2', 'stale_green_pr', 'Your authored PR is green and stale.', 'Merge or close this green PR');
-
-  if (change.subjectType === 'Repository' && raw.hasAgentInstructions === false) return make('P2', 'repo_missing_agent_instructions', 'Active repo lacks repo-local agent instructions.', 'Add AGENTS.md/CLAUDE.md with verification commands and project constraints');
-  if (change.subjectType === 'Repository' && raw.hasVerifyCommand === false) return make('P2', 'repo_missing_verify_command', 'Active repo lacks one obvious verification command.', 'Add one obvious verify command for agents and humans');
-  if (change.subjectType === 'WipSummary' && Number(raw.activeRepoCount ?? 0) > Number(raw.wipLimit ?? 3)) return make('P2', 'high_wip_warning', 'Recent work spans more active repos than the configured WIP limit.', 'Choose active repos and archive/defer the rest');
-  if (Number(raw.recentFixCommitCount ?? 0) >= 3) return make('P2', 'commit_velocity_warning', 'Repeated fix/stabilize/harden commits suggest verification debt.', 'Stop and characterize before more feature work');
 
   if (reason === 'author' || change.sourceEndpoint.includes('created-issues')) return make('P2', 'maintenance', 'A thread you opened has activity or needs closure.', 'Respond, close, or archive this loop');
   if (reason === 'comment') return make('P3', 'notification', 'A subscribed thread has new activity.', 'Review if still relevant');
@@ -107,8 +91,7 @@ export function compareItems(a: GitHubActionItem, b: GitHubActionItem): number {
 
 function loopRisk(item: GitHubActionItem): number {
   if (['authored_pr_failing', 'authored_pr_conflict', 'authored_pr_changes_requested'].includes(item.kind)) return 4;
-  if (['authored_pr_unverified', 'stale_green_pr'].includes(item.kind)) return 3;
-  if (['high_wip_warning', 'commit_velocity_warning'].includes(item.kind)) return 2;
+  if (['stale_green_pr'].includes(item.kind)) return 3;
   return 1;
 }
 

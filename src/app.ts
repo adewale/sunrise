@@ -546,14 +546,14 @@ function renderDesignLanguage() {
     id: 'design-sample',
     canonicalSubjectKey: 'design:sample',
     priority: 'P0',
-    kind: 'authored_pr_unverified',
-    title: 'Authored PR is green but missing verification evidence',
+    kind: 'authored_pr_failing',
+    title: 'Authored PR has failing checks',
     repo: 'owner/repo',
     url: '#',
     updatedAt: new Date().toISOString(),
     reason: 'The item row, chips, title, reason, and action copy reuse the dashboard renderer.',
-    suggestedAction: 'Add verification summary or run the declared verify command',
-    evidence: { checks: 'success', hasVerificationSummary: false },
+    suggestedAction: 'Fix failing checks',
+    evidence: { checks: 'failure' },
     source: 'pulls',
   };
   return `<header class="masthead panel"><div><p class="eyebrow">Design language</p><h1>Interface kit</h1><p class="muted">This page is public and reuses the same components as the product UI, so changes to originals update here too.</p></div><a class="button ghost" href="/">Back home</a></header>

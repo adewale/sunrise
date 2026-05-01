@@ -101,7 +101,6 @@ async function discoverFromGitHub(runId: string, token: string, ownerLogin: stri
     safeFetchPaginated<any>('https://api.github.com/user/repos?affiliation=owner&sort=pushed&direction=desc&per_page=30', headers, 'owned repositories'),
   ]);
   const enrichedAuthoredPrs = await enrichPullRequests(headers, authoredPrs.slice(0, 20), ownerLogin);
-  const repoReadiness = await discoverRepoReadiness(runId, headers, activeRepos.slice(0, 10), ownerLogin);
   const repoAlerts = await discoverRepoAlerts(runId, headers, activeRepos.slice(0, 10), ownerLogin);
   await captureRateLimit(env, headers);
   return dedupeChanges([
@@ -115,7 +114,6 @@ async function discoverFromGitHub(runId: string, token: string, ownerLogin: stri
     ...discussions.map((i) => issueSearchToChange(runId, i, 'search/discussions', 'mention', ownerLogin)),
     ...repoInvitations.map((i) => invitationToChange(runId, i, 'invitations/repository')),
     ...orgMemberships.map((i) => invitationToChange(runId, i, 'invitations/org')),
-    ...repoReadiness,
     ...repoAlerts,
   ]);
 }
@@ -160,22 +158,6 @@ async function enrichPullRequests(headers: Record<string, string>, prs: any[], o
   }));
 }
 
-async function discoverRepoReadiness(runId: string, headers: Record<string, string>, repos: any[], ownerLogin: string): Promise<GitHubChange[]> {
-  const out: GitHubChange[] = [];
-  for (const repo of repos) {
-    const fullName = String(repo.full_name ?? '');
-    if (!fullName || String(repo.owner?.login ?? '').toLowerCase() !== ownerLogin.toLowerCase()) continue;
-    const [agents, packageJson] = await Promise.all([
-      contentExists(headers, fullName, 'AGENTS.md'),
-      hasVerifyCommand(headers, fullName),
-    ]);
-    const pushed = String(repo.pushed_at ?? repo.updated_at ?? new Date().toISOString());
-    if (!agents) out.push(repoReadinessChange(runId, fullName, pushed, 'repo_missing_agent_instructions', 'Active repo is missing AGENTS.md', { hasAgentInstructions: false }));
-    if (!packageJson) out.push(repoReadinessChange(runId, fullName, pushed, 'repo_missing_verify_command', 'Active repo is missing an obvious package.json verify command', { hasVerifyCommand: false }));
-  }
-  return out;
-}
-
 async function discoverRepoAlerts(runId: string, headers: Record<string, string>, repos: any[], ownerLogin: string): Promise<GitHubChange[]> {
   const out: GitHubChange[] = [];
   for (const repo of repos) {
@@ -193,21 +175,6 @@ async function discoverRepoAlerts(runId: string, headers: Record<string, string>
     out.push(...secretScanning.map((alert) => repoAlertChange(runId, fullName, 'security/secret-scanning', `Secret scanning alert: ${alert.secret_type_display_name ?? alert.secret_type ?? fullName}`, alert.html_url, alert.updated_at ?? alert.created_at, { reason: 'security_alert' })));
   }
   return out;
-}
-
-async function contentExists(headers: Record<string, string>, repo: string, path: string) {
-  const res = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, { headers });
-  return res.ok;
-}
-
-async function hasVerifyCommand(headers: Record<string, string>, repo: string) {
-  try {
-    const json = await fetchJson<any>(`https://api.github.com/repos/${repo}/contents/package.json`, headers);
-    const decoded = atob(String(json.content ?? '').replace(/\s/g, ''));
-    const pkg = JSON.parse(decoded);
-    const scripts = pkg.scripts ?? {};
-    return Boolean(scripts.verify || scripts.test || scripts.check || scripts.build || scripts.lint);
-  } catch { return false; }
 }
 
 async function fetchJson<T>(url: string, headers: Record<string, string>): Promise<T> {
@@ -272,10 +239,6 @@ function invitationToChange(runId: string, item: any, endpoint: string): GitHubC
   return { id: crypto.randomUUID(), runId, canonicalSubjectKey: `github:${endpoint}:${repo}`, sourceEndpoint: endpoint, repo, subjectType: 'Invitation', subjectUrl: item.url ?? '', htmlUrl: item.html_url ?? item.repository?.html_url ?? `https://github.com/${repo}`, updatedAt: item.updated_at ?? item.created_at ?? new Date().toISOString(), raw: { reason: 'invitation', title } };
 }
 
-function repoReadinessChange(runId: string, repo: string, updatedAt: string, key: string, title: string, raw: Record<string, unknown>): GitHubChange {
-  return { id: crypto.randomUUID(), runId, canonicalSubjectKey: `github:${repo}:readiness:${key}`, sourceEndpoint: 'contents/repo-readiness', repo, subjectType: 'Repository', subjectUrl: `https://api.github.com/repos/${repo}`, htmlUrl: `https://github.com/${repo}`, updatedAt, raw: { title, ...raw } };
-}
-
 function repoAlertChange(runId: string, repo: string, endpoint: string, title: string, htmlUrl: string, updatedAt: string, raw: Record<string, unknown>): GitHubChange {
   return { id: crypto.randomUUID(), runId, canonicalSubjectKey: `github:${repo}:${endpoint}:${title}`, sourceEndpoint: endpoint, repo, subjectType: endpoint.includes('actions') ? 'WorkflowRun' : 'SecurityAlert', subjectUrl: htmlUrl, htmlUrl: htmlUrl || `https://github.com/${repo}`, updatedAt: updatedAt ?? new Date().toISOString(), raw: { title, ...raw } };
 }
@@ -308,7 +271,6 @@ function fixtureChanges(runId: string, owner: string): GitHubChange[] {
   const base = { runId, repo: `${owner}/sunrise`, subjectType: 'PullRequest', subjectUrl: 'https://api.github.com/repos/o/r/pulls/1', htmlUrl: 'https://github.com/o/r/pull/1', updatedAt: now };
   return [
     { ...base, id: crypto.randomUUID(), canonicalSubjectKey: 'github:o/r:pull:1', sourceEndpoint: 'notifications', raw: { reason: 'review_requested', title: 'Review dashboard PR' } },
-    { ...base, id: crypto.randomUUID(), canonicalSubjectKey: 'github:o/r:pull:2', sourceEndpoint: 'search/authored-prs', raw: { author: owner, title: 'Green but unexplained', checks: 'success', hasVerificationSummary: false } },
-    { ...base, id: crypto.randomUUID(), canonicalSubjectKey: 'github:o/r:readiness:agent', sourceEndpoint: 'contents', subjectType: 'Repository', raw: { title: 'sunrise missing agent instructions', hasAgentInstructions: false } },
+    { ...base, id: crypto.randomUUID(), canonicalSubjectKey: 'github:o/r:pull:2', sourceEndpoint: 'search/authored-prs', raw: { author: owner, title: 'Green but stale', checks: 'success', staleGreen: true } },
   ];
 }

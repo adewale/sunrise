@@ -6,6 +6,16 @@ A self-hosted morning dashboard for the GitHub work that needs your attention.
 
 Public homepage → GitHub repo → Deploy your own version → own your data.
 
+## Screenshots
+
+![Sunrise inbox](docs/assets/screenshots/dashboard.png)
+
+| Landing | Mobile inbox |
+| --- | --- |
+| ![Sunrise landing page](docs/assets/screenshots/landing.png) | ![Sunrise mobile inbox](docs/assets/screenshots/dashboard-mobile.png) |
+
+More screenshots are in [`docs/assets/screenshots`](docs/assets/screenshots).
+
 ## Deploy
 
 1. Click **Deploy to Cloudflare** above. Cloudflare forks the repo and provisions D1 + Queues from `wrangler.jsonc`.

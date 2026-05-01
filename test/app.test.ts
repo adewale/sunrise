@@ -14,6 +14,16 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('Deploy your own');
     expect(html).toContain('Setup checklist');
     expect(html).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg">');
+    expect(html).toContain('/raw/main/docs/assets/screenshots/dashboard.png');
+    expect(html).toContain('/assets/sunrise-inertia-client.js');
+  });
+
+  it('serves a progressive Inertia client bundle', async () => {
+    const res = await app.request('/assets/sunrise-inertia-client.js', {}, { DB: createMemoryDb() } as unknown as Env);
+    const js = await res.text();
+    expect(res.headers.get('content-type')).toContain('text/javascript');
+    expect(js).toContain("X-Inertia");
+    expect(js).toContain('history.pushState');
   });
 
   it('serves a sunrise inbox favicon with light and dark variants', async () => {
@@ -136,6 +146,24 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('My PR · other repo');
   });
 
+  it('shows richer runs operations with queue and rate-limit status', async () => {
+    const db = createMemoryDb();
+    await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
+    await db.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, 0, 0)').bind('run1', 'manual', 'succeeded', '2026-04-30T00:00:00Z', 0, 0).run();
+    await db.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', '2026-04-30T00:00:00Z', 3, 'run1').run();
+    await db.prepare('INSERT INTO github_changes (id, run_id, canonical_subject_key, source_endpoint, repo, subject_type, subject_url, html_url, updated_at, raw_json, first_seen_at, last_seen_at, processing_status, attempt_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind('c1', 'run1', 'k1', 'notifications', 'o/r', 'Issue', 'api', 'html', '2026-04-30T00:00:00Z', '{}', '2026-04-30T00:00:00Z', '2026-04-30T00:00:00Z', 'pending', 0).run();
+    await db.prepare('INSERT INTO rate_limit_snapshots (id, resource, remaining, reset_at, captured_at) VALUES (?, ?, ?, ?, ?)')
+      .bind('rate1', 'core', 4999, '2026-04-30T01:00:00Z', '2026-04-30T00:00:00Z').run();
+
+    const html = await (await app.request('/runs', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env)).text();
+    expect(html).toContain('Queue backlog');
+    expect(html).toContain('sunrise-github-dlq');
+    expect(html).toContain('Rate limit');
+    expect(html).toContain('4999');
+    expect(html).toContain('Last checked');
+  });
+
   it('lets the owner change inbox page size in settings', async () => {
     const db = createMemoryDb();
     await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
@@ -242,6 +270,9 @@ describe('Sunrise app routes', () => {
     const res = await app.request('/login', {}, env);
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toContain('github.com/login/oauth/authorize');
+    const scope = new URL(res.headers.get('location') ?? '').searchParams.get('scope');
+    expect(scope).toBe('read:user user:email notifications');
+    expect(scope).not.toContain('repo');
     const state = await db.prepare('SELECT * FROM oauth_states').all();
     expect(state.results).toHaveLength(1);
   });

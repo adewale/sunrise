@@ -55,6 +55,24 @@ describe('GitHub discovery', () => {
       'repo_pr',
       'notification',
     ]));
+    const run = (await db.prepare('SELECT * FROM scan_runs').first<Record<string, any>>())!;
+    expect(run.processed_count).toBe(8);
+  });
+
+  it('uses sendBatch when a queue binding is available', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/notifications')) return Response.json([notification('mention', 'Mentioned thread', 'https://api.github.com/repos/o/r/issues/1', '2026-05-01T10:00:00Z')]);
+      if (u.includes('/search/issues')) return search([]);
+      return Response.json([]);
+    }));
+    const queue = { sendBatch: vi.fn(async () => undefined), send: vi.fn(async () => undefined) };
+    const db = createMemoryDb();
+    await runDiscovery({ DB: db, GITHUB_QUEUE: queue, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
+    expect(queue.sendBatch).toHaveBeenCalledOnce();
+    expect(queue.send).not.toHaveBeenCalled();
+    const run = (await db.prepare('SELECT * FROM scan_runs').first<Record<string, any>>())!;
+    expect(run.processed_count ?? 0).toBe(0);
   });
 });
 

@@ -6,5 +6,7 @@ GITHUB_CLIENT_ID=""
 GITHUB_CLIENT_SECRET=""
 OWNER_LOGIN=""
 SESSION_SECRET=""
+# Optional: add `repo` only if you need private repository discovery.
+GITHUB_OAUTH_SCOPES="read:user user:email notifications"
 # Local-only helper; do not enable in production.
 TEST_GITHUB_FIXTURES="true"

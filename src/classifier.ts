@@ -11,6 +11,7 @@ const directnessRank: Record<ActionKind, number> = {
   stale_green_pr: 2,
   mention: 3,
   security_alert: 0,
+  workflow_failure: 0,
   invitation: 0,
   repo_pr: 2,
   authored_pr_pending: 4,
@@ -63,6 +64,7 @@ export function classifyChange(change: GitHubChange, ownerLogin: string): GitHub
   if (reason === 'assign') return make('P0', 'assigned', 'This issue or PR is assigned to you.', 'Respond or unassign yourself');
   if (reason === 'mention' || reason === 'team_mention' || change.sourceEndpoint.includes('mentions')) return make('P1', 'mention', 'You were mentioned directly.', 'Reply to mention');
   if (reason === 'security_alert') return make('P0', 'security_alert', 'GitHub reported a security alert.', 'Triage security alert');
+  if (change.sourceEndpoint.includes('workflow-failure')) return make('P0', 'workflow_failure', 'A workflow failed in one of your repositories.', 'Open the failed run and repair the breakage');
   if (change.sourceEndpoint.includes('invitations')) return make('P0', 'invitation', 'A repository or organization invitation is pending.', 'Accept or decline invitation');
   if (change.sourceEndpoint.includes('owned-repo-prs')) return make('P2', 'repo_pr', 'An open PR targets one of your repositories.', 'Review or triage this PR');
 

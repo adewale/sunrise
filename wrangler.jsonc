@@ -8,7 +8,7 @@
   ],
   "queues": {
     "producers": [{ "binding": "GITHUB_QUEUE", "queue": "sunrise-github" }],
-    "consumers": [{ "queue": "sunrise-github" }]
+    "consumers": [{ "queue": "sunrise-github", "max_batch_size": 10, "max_batch_timeout": 30, "max_retries": 3, "dead_letter_queue": "sunrise-github-dlq" }]
   },
   "triggers": { "crons": ["0 12 * * *"] },
   "vars": {

@@ -2,18 +2,26 @@
 
 Date: 2026-05-01
 
-This audit compares `specs/sunrise-github-dashboard-spec.md` with the current implementation after the Hono/Inertia migration.
+This audit compares `specs/sunrise-github-dashboard-spec.md` with the current implementation after the Inertia, operations, queue, discovery, OAuth-scope, fixture, and landing-page follow-up work.
 
 ## Aligned with spec
 
 - Self-hosted, single-user Cloudflare Worker distribution model.
 - Public landing page for visitors and deploy-your-own path.
+- Landing page now shows a product screenshot from the repository assets.
 - GitHub OAuth owner sign-in with D1-backed OAuth state and sessions.
+- Default OAuth scope is now least-privilege for public data: `read:user user:email notifications`; `GITHUB_OAUTH_SCOPES` can opt into broader scopes such as `repo` for private repository discovery.
 - `OWNER_LOGIN` owner allow-listing; no app-local users table.
 - D1 is the primary persistence layer for settings, sessions, OAuth state, scan runs, raw GitHub changes, action items, evidence, rate-limit snapshots, and ignored items.
 - Cloudflare Queues and Cron are used for background discovery/processing.
+- Queue consumer now awaits processing directly instead of scheduling per-message floating work.
+- Discovery uses `sendBatch()` when the Queue binding supports it, falling back to `send()`.
+- Queue consumer config now includes explicit batch size, batch timeout, retry count, and DLQ name.
+- Queue processing increments `scan_runs.processed_count` for processed/ignored changes.
 - Hono routes are the app surface.
-- `@hono/inertia` is now wired into page rendering for landing, setup, design, dashboard, settings, and runs pages.
+- `@hono/inertia` is wired into page rendering for landing, setup, design, dashboard, settings, and runs pages.
+- An Inertia client source exists (`src/client.tsx`) with React page placeholders and a served progressive navigation bundle at `/assets/sunrise-inertia-client.js`.
+- `@hono/inertia/vite` configuration and `app/pages.gen.ts` constrain page names for `c.render(...)`.
 - Routes still provide JSON/props views for debugging/agent inspection (`?json` or `Accept: application/json` where applicable).
 - D1 indexes exist for the main dashboard/action-item, scan-run, session-expiry, ignored-item, and GitHub-change predicates.
 - `wrangler types` is part of verification.
@@ -24,7 +32,9 @@ This audit compares `specs/sunrise-github-dashboard-spec.md` with the current im
 - GitHub discovery deduplicates notifications and search results by canonical subject.
 - Manual refresh uses the same discovery path as scheduled scans.
 - Fixture mode is development-only and warns/fails in setup when enabled.
+- Fixture capture and manual-labeling scaffolding now exists under `scripts/` and `fixtures/`.
 - Rate-limit count is visible in the dashboard header when a snapshot exists.
+- `/runs` now shows freshness, rate-limit snapshot, queue backlog approximation, failed count, DLQ name, and formatted timestamps.
 
 ## Intentional product decisions that supersede older spec text
 
@@ -45,45 +55,32 @@ These are not treated as bugs; the spec should be read with these product decisi
 
 ### UI / Inertia
 
-- Inertia is now used server-side through `c.render(...)` and the Inertia protocol, but there is no React/Vue/Svelte client app yet.
-- There is no client-side Inertia navigation/hydration bundle; initial HTML is server-rendered by the existing render functions and an Inertia page object is embedded for protocol compatibility.
-- Type-safe generated Inertia page names via the `@hono/inertia/vite` plugin are not configured.
-- The large inline string renderer in `src/app.ts` remains and should eventually be split into page/component modules.
+- The served client bundle is progressive and preserves current server-rendered HTML; full React hydration of the visible UI is not complete yet.
+- React page files are placeholders for typed page registration. The large inline string renderer in `src/app.ts` remains and should be split into reusable page/component modules.
+- Vite can build `src/client.tsx`, but Worker asset serving is still handled by the explicit `/assets/sunrise-inertia-client.js` route rather than Cloudflare static assets.
 
 ### Runs / operations
 
-- `/runs` exists but is minimal.
-- Missing from `/runs`: queue backlog count, DLQ status/count, rate-limit snapshot, explicit freshness summary, and nicer timestamp formatting.
-- `scan_runs.processed_count` is not reliably updated by the queue consumer.
+- `/runs` queue backlog is an approximation based on D1 `github_changes` processing status, not Cloudflare Queue's true broker depth.
+- DLQ status shows configured DLQ name, but not actual DLQ item count because the Worker binding does not expose that directly.
 
 ### Queue robustness
 
-- Queue consumer still schedules per-message work with `ctx.waitUntil(...)`; the spec prefers no questionable floating promises and a clearer awaited consumer flow.
-- No explicit `sendBatch()` usage.
-- No configured `max_batch_size` / `max_batch_timeout`.
-- No DLQ configuration.
+- DLQ config exists in `wrangler.jsonc`, but each deployment still needs the DLQ queue resource to exist/be provisioned correctly.
 - Retry/backoff coverage exists for many D1 writes but is not comprehensive for every write path.
 
 ### GitHub discovery/enrichment
 
-Implemented: notifications, review-requested search, assigned search, authored PRs, authored issues, PRs in owned repos, involved search.
+Implemented or partially implemented: notifications, review-requested search, assigned search, authored PRs, authored issues, PRs in owned repos, involved search, discussions mentions, repository invitations, organization memberships, PR review/status enrichment for a bounded authored-PR subset, merge-conflict evidence from PR metadata, failed workflow runs, Dependabot alerts, code scanning alerts, secret scanning alerts, rate-limit snapshots, and repo-readiness probes for AGENTS.md/package.json/reality.manifest.md.
 
 Still missing or incomplete from the larger spec:
 
-- PR check-run/status enrichment.
-- PR review-state enrichment.
-- Merge-conflict detection.
-- Authored PRs with failing checks/requested changes/conflicts as reliable P0s.
-- Failed workflow runs on owned/active repos.
-- Repository invitations.
-- Organization invitations/memberships.
-- Dependabot alerts.
-- Code scanning alerts.
-- Secret scanning alerts.
-- Discussions mentions.
-- Recent repo activity / high-velocity unfinished-loop detection.
-- Repo-local agentic-readiness checks such as `reality.manifest.md`, verification command detection, release/deploy instruction detection.
-- Manual labeling of 50 real candidates and classifier comparison.
+- PR check-run enrichment uses statuses/reviews today; full Check Runs API coverage is still incomplete.
+- Workflow/security/repo-readiness discovery is intentionally bounded to recently pushed owned repos and may miss older or org-owned repositories.
+- Created issues with recent comments are discovered but not deeply enriched for “needs owner response” semantics.
+- Recent repo activity / high-velocity unfinished-loop detection is not fully implemented.
+- Repo-local verification command detection only checks for `package.json` existence, not script semantics yet.
+- Manual labeling of 50 real candidates and classifier comparison has scaffolding but not a completed labeled corpus.
 
 ### Priority/ranking
 
@@ -101,40 +98,29 @@ Still missing or incomplete from the larger spec:
 
 - Core indexes exist, but `EXPLAIN QUERY PLAN` evidence for the dashboard query is not captured in docs.
 - Compatibility-date freshness should be periodically reviewed.
-- Queue retry/DLQ/batch configuration remains incomplete.
 
 ### Auth/token model
 
-- OAuth scopes currently include broad `repo` access.
-- The spec asks for a least-privilege permissions reality check; exact minimal scopes/permissions and endpoint failure modes are not documented.
+- The default OAuth scope is least-privilege for public data, but private repository discovery requires documenting when to opt into `repo` via `GITHUB_OAUTH_SCOPES`.
 - The spec keeps open whether v1 should use OAuth user tokens, a single-user GitHub App installation token, or both; current app uses OAuth user tokens only.
+- Exact endpoint-by-endpoint failures under minimal scopes still need a recorded reality check.
 
 ### Deployment/onboarding
 
 - Deploy to Cloudflare works, but Queue names are account-level and may collide for repeated test deployments unless the fork config uses unique names.
 - Docs mention this, but the source template still necessarily contains default names.
-
-### Landing/product communication
-
-- Landing page is intentionally compact.
-- It does not yet show a live/static product screenshot despite the spec marking a screenshot/mock dashboard as useful.
-- README has screenshots, but the live landing page does not use them.
+- DLQ queue provisioning should be verified for deploy-button forks.
 
 ### Reality verification fixtures
 
-- There are tests and fixture mode, but the spec's full fixture-capture plan is incomplete:
-  - redacted saved payloads for all v1 endpoints;
-  - check-run payloads;
-  - review payloads;
-  - workflow-run payloads;
-  - manually labeled candidate set;
-  - local dry-run CLI like `npm run render:inbox -- --json`.
+- Capture script and manual-label template exist, but the repository does not yet contain a completed, redacted, manually labeled 50-candidate corpus.
+- Local dry-run CLI like `npm run render:inbox -- --json` is still absent.
 
 ## Recommended next order
 
-1. Split Inertia rendering into page modules while preserving current visual output.
-2. Add client-side Inertia only if SPA navigation is still desirable after the server-side migration.
-3. Improve `/runs` and queue robustness: awaited consumer, processed counts, queue config, DLQ, and operational status.
-4. Capture `EXPLAIN QUERY PLAN` evidence for dashboard queries.
-5. Add PR checks/reviews/workflow enrichment before expanding to security/org/repo-readiness sources.
-6. Document OAuth least-privilege reality checks.
+1. Split the string renderer into typed page/component modules and make the React pages render the visible UI.
+2. Verify deploy-button provisioning with the new DLQ config.
+3. Capture `EXPLAIN QUERY PLAN` evidence for dashboard queries.
+4. Run the fixture capture script against a real account, redact payloads, and label 50 candidates.
+5. Add full Check Runs API coverage and semantic verification-command detection.
+6. Document endpoint-by-endpoint behavior under default scopes vs `repo` scopes.

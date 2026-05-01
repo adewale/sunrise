@@ -4,11 +4,11 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
-    "types": ["vitest/globals"],
+    "types": ["vitest/globals", "vite/client"],
     "jsx": "react-jsx",
     "noEmit": true,
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true
   },
-  "include": ["src", "test", "worker-configuration.d.ts"]
+  "include": ["src", "test", "app", "worker-configuration.d.ts", "vite.config.ts"]
 }

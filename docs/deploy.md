@@ -39,11 +39,14 @@ npm run verify
 wrangler d1 create sunrise
 # copy the returned database_id into wrangler.jsonc for manual CLI deploys
 wrangler queues create sunrise-github
+wrangler queues create sunrise-github-dlq
 wrangler d1 migrations apply DB --remote
 wrangler secret put GITHUB_CLIENT_ID
 wrangler secret put GITHUB_CLIENT_SECRET
 wrangler secret put OWNER_LOGIN
 wrangler secret put SESSION_SECRET
+# Optional: add repo scope for private repository discovery.
+# wrangler secret put GITHUB_OAUTH_SCOPES
 wrangler deploy
 ```
 

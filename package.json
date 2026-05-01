@@ -11,7 +11,8 @@
     "verify": "npm run types:cf && npm run typecheck && npm test",
     "build": "npm run typecheck",
     "dev": "wrangler dev",
-    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy"
+    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "fixtures:capture": "node scripts/capture-github-fixtures.mjs"
   },
   "cloudflare": {
     "bindings": {
@@ -31,6 +32,7 @@
   },
   "dependencies": {
     "@hono/inertia": "^0.2.0",
+    "@inertiajs/react": "^3.0.3",
     "hono": "^4.12.16",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"

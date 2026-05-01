@@ -1,0 +1,11 @@
+[
+  {
+    "candidateId": "github:owner/repo:pull:123",
+    "source": "search/authored-prs",
+    "url": "https://github.com/owner/repo/pull/123",
+    "actionable": true,
+    "expectedPriority": "P0",
+    "expectedKind": "authored_pr_failing",
+    "notes": "Authored PR has failing checks; owner must repair or close it."
+  }
+]

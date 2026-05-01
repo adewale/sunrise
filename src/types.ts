@@ -17,6 +17,7 @@ export type ActionKind =
   | 'commit_velocity_warning'
   | 'invitation'
   | 'security_alert'
+  | 'workflow_failure'
   | 'repo_pr'
   | 'notification'
   | 'maintenance';

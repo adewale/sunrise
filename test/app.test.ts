@@ -24,7 +24,8 @@ describe('Sunrise app routes', () => {
     const html = await res.text();
     expect(html).toContain('class="dashboard-layout"');
     expect(html).toContain('class="inbox panel"');
-    expect(html).toContain('GitHub inbox');
+    expect(html).not.toContain('GitHub inbox');
+    expect(html).not.toContain('<p class="eyebrow">P0</p>');
     expect(html).toContain('class="marginalia"');
     expect(html).toContain('Review the launch PR');
     expect(html).not.toContain('Recent signal');
@@ -41,7 +42,7 @@ describe('Sunrise app routes', () => {
     expect(res.status).toBe(200);
     const props = await res.json() as any;
     expect(props.items.length).toBeLessThanOrEqual(20);
-    expect(props.sections.P3.collapsed).toBe(true);
+    expect(props.items.map((item: any) => item.title).slice(0, 2)).toEqual(['Item 0', 'Item 1']);
     expect(props.items.every((item: any) => item.suggestedAction)).toBe(true);
   });
 

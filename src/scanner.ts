@@ -127,7 +127,7 @@ async function fetchPaginated<T>(firstUrl: string, headers: Record<string, strin
     const res = await fetch(url, { headers });
     if (!res.ok) throw new Error(`${label} failed: ${res.status}`);
     const json = await res.json<any>();
-    out.push(...(Array.isArray(json) ? json : json.items ?? []));
+    out.push(...(Array.isArray(json) ? json : json.items ?? json.check_runs ?? json.workflow_runs ?? json.alerts ?? []));
     url = nextLink(res.headers.get('link'));
   }
   return out;

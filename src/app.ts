@@ -130,14 +130,18 @@ app.post('/settings', async (c) => {
 app.post('/refresh', async (c) => {
   const session = await requireSession(c);
   if (session instanceof Response) return session;
-  const run = await runDiscovery(c.env, 'manual', session.accessToken);
-  return c.redirect(`/dashboard?refresh=started&runId=${encodeURIComponent(run.runId)}&candidates=${run.candidateCount}`);
+  try {
+    const run = await runDiscovery(c.env, 'manual', session.accessToken);
+    return c.redirect(`/runs?refresh=started&runId=${encodeURIComponent(run.runId)}&candidates=${run.candidateCount}`);
+  } catch (error) {
+    return c.redirect(`/runs?refresh=failed&error=${encodeURIComponent(error instanceof Error ? error.message : String(error))}`);
+  }
 });
 
 app.get('/runs', async (c) => {
   const session = await requireSession(c);
   if (session instanceof Response) return session;
-  const props = await runsProps(c.env);
+  const props = await runsProps(c.env, c.req.query('runId'), c.req.query('refresh'), c.req.query('candidates'), c.req.query('error'));
   if (c.req.header('Accept')?.includes('application/json')) return c.json(props);
   return c.render('Runs', props);
 });
@@ -170,20 +174,39 @@ app.post('/__debug/reprocess/:changeId', async (c) => {
   return c.json({ ok: true });
 });
 
-async function runsProps(env: Env) {
+async function runsProps(env: Env, runId?: string, refresh?: string, candidateCount?: string, error?: string) {
   const runs = (await env.DB.prepare('SELECT * FROM scan_runs ORDER BY started_at DESC LIMIT 10').all()).results;
   const lastRun = await env.DB.prepare('SELECT * FROM scan_runs ORDER BY started_at DESC LIMIT 1').first<Record<string, any>>();
+  const activeRun = runId ? await env.DB.prepare('SELECT * FROM scan_runs WHERE id = ? LIMIT 1').bind(runId).first<Record<string, any>>() : null;
   const rate = await env.DB.prepare('SELECT * FROM rate_limit_snapshots ORDER BY captured_at DESC LIMIT 1').first<Record<string, any>>();
   const pending = await countRows(env.DB, "SELECT COUNT(*) AS count FROM github_changes WHERE processing_status = 'pending'");
   const failed = await countRows(env.DB, "SELECT COUNT(*) AS count FROM github_changes WHERE processing_status = 'failed'");
   const processed = await countRows(env.DB, "SELECT COUNT(*) AS count FROM github_changes WHERE processing_status = 'processed'");
+  const queue = await queueStats(env, { pending, failed, processed, dlq: 'sunrise-github-dlq', maxBatchSize: 10, maxBatchTimeout: 30, maxRetries: 3 });
+  const notice = refreshNotice(refresh, activeRun, candidateCount, error);
+  const autoRefresh = refresh === 'started' && Boolean(activeRun) && Number(activeRun?.processed_count ?? 0) < Number(activeRun?.candidate_count ?? candidateCount ?? 0);
   return {
     product: 'Sunrise',
     runs,
+    activeRunId: runId ?? null,
+    activeRun,
+    notice,
+    autoRefresh,
     freshness: { lastScanAt: lastRun?.completed_at ?? lastRun?.started_at ?? null, status: scanStatus(lastRun) },
     rateLimit: rate ? { resource: rate.resource, remaining: rate.remaining, resetAt: rate.reset_at, capturedAt: rate.captured_at } : null,
-    queue: await queueStats(env, { pending, failed, processed, dlq: 'sunrise-github-dlq', maxBatchSize: 10, maxBatchTimeout: 30, maxRetries: 3 }),
+    queue,
   };
+}
+
+function refreshNotice(refresh?: string, activeRun?: Record<string, any> | null, candidateCount?: string, error?: string) {
+  if (refresh === 'failed') return { kind: 'fail', message: `Manual refresh failed${error ? `: ${error}` : '.'}` };
+  if (refresh !== 'started') return null;
+  const found = Number(activeRun?.candidate_count ?? candidateCount ?? 0);
+  const processed = Number(activeRun?.processed_count ?? 0);
+  const status = activeRun?.status ?? 'queued';
+  if (found === 0) return { kind: 'success', message: 'Manual refresh completed. No GitHub events were found.' };
+  if (processed >= found) return { kind: 'success', message: `Manual refresh completed. Processed ${processed} of ${found} GitHub events.` };
+  return { kind: 'running', message: `Manual refresh started. Found ${found} GitHub events; processed ${processed} so far. Status: ${status}. This page will update while processing continues.` };
 }
 
 async function countRows(db: D1Database, sql: string) {

@@ -1,5 +1,7 @@
 import type { Env } from './env';
 import type { GitHubChange, QueueMessage } from './types';
+
+type ProcessGitHubChangeMessage = Extract<QueueMessage, { kind: 'process-github-change' }>;
 import { classifyChange } from './classifier';
 import { retryD1 } from './db';
 
@@ -23,12 +25,12 @@ async function persistChange(env: Env, change: GitHubChange) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)
     ON CONFLICT(canonical_subject_key, source_endpoint, updated_at) DO UPDATE SET run_id = excluded.run_id, raw_json = excluded.raw_json, last_seen_at = excluded.last_seen_at, processing_status = 'pending'`)
     .bind(change.id, change.runId, change.canonicalSubjectKey, change.sourceEndpoint, change.repo, change.subjectType, change.subjectUrl, change.htmlUrl, change.updatedAt, JSON.stringify(change.raw), new Date().toISOString(), new Date().toISOString()).run());
-  const msg: QueueMessage = { kind: 'process-github-change', runId: change.runId, changeId: change.id };
+  const msg: ProcessGitHubChangeMessage = { kind: 'process-github-change', runId: change.runId, changeId: change.id };
   if (env.GITHUB_QUEUE) await env.GITHUB_QUEUE.send(msg);
   else await processGithubChange(env, msg);
 }
 
-export async function processGithubChange(env: Env, msg: QueueMessage) {
+export async function processGithubChange(env: Env, msg: ProcessGitHubChangeMessage) {
   const row = await env.DB.prepare('SELECT * FROM github_changes WHERE id = ?').bind(msg.changeId).first<Record<string, string>>();
   if (!row) return;
   const ignored = await env.DB.prepare('SELECT 1 FROM ignored_items WHERE canonical_subject_key = ? LIMIT 1').bind(row.canonical_subject_key).first();

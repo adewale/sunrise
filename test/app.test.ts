@@ -27,6 +27,7 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('GitHub inbox');
     expect(html).toContain('class="marginalia"');
     expect(html).toContain('Review the launch PR');
+    expect(html).not.toContain('Recent signal');
   });
 
   it('returns dashboard JSON from the same props shape with <=20 default items and P3 collapsed', async () => {

@@ -18,6 +18,16 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('/assets/sunrise-inertia-client.js');
   });
 
+  it('can render a project landing page without personal setup claims', async () => {
+    const env = { DB: createMemoryDb(), PROJECT_LANDING: 'true', GITHUB_REPO_URL: 'https://github.com/adewale/sunrise' } as unknown as Env;
+    const res = await app.request('/', {}, env);
+    const html = await res.text();
+    expect(html).toContain('Deploy your own');
+    expect(html).toContain('/raw/main/docs/assets/screenshots/dashboard.png');
+    expect(html).not.toContain('Setup needs attention');
+    expect(html).not.toContain('Sign in with GitHub');
+  });
+
   it('serves a progressive Inertia client bundle', async () => {
     const res = await app.request('/assets/sunrise-inertia-client.js', {}, { DB: createMemoryDb() } as unknown as Env);
     const js = await res.text();

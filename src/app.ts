@@ -33,8 +33,9 @@ app.get('/assets/sunrise-inertia-client.js', (c) => new Response(inertiaClientBu
 app.get('/', async (c) => {
   const session = await getSession(c.env.DB, c.req.header('Cookie') ?? null);
   if (session) return c.redirect('/dashboard');
-  const setup = await setupDiagnostics(c.env, c.req.url);
-  const props = { product: 'Sunrise', signedIn: false, setup, repoUrl: c.env.GITHUB_REPO_URL ?? 'https://github.com/adewale/sunrise' };
+  const projectLanding = c.env.PROJECT_LANDING === 'true';
+  const setup = projectLanding ? null : await setupDiagnostics(c.env, c.req.url);
+  const props = { product: 'Sunrise', signedIn: false, projectLanding, setup, repoUrl: c.env.GITHUB_REPO_URL ?? 'https://github.com/adewale/sunrise' };
   if (c.req.query('json') !== undefined) return c.json(props);
   return c.render('Landing', props);
 });
@@ -471,7 +472,7 @@ function renderLanding(props: any) {
     <section class="hero panel">
     <p class="actions"><a class="button primary" href="${escapeHtml(repoUrl)}">Deploy your own</a> <a class="button ghost" href="/login">Sign in with GitHub</a></p>
     <p class="muted">Single-user, read-only by default, and your snapshots stay in your Cloudflare account.</p><figure class="product-shot"><img src="${escapeHtml(repoUrl)}/raw/main/docs/assets/screenshots/dashboard.png" alt="Sunrise inbox screenshot" loading="lazy"></figure></section>
-    ${renderSetupGuide(props.setup)}
+    ${props.setup ? renderSetupGuide(props.setup) : ''}
   `;
 }
 

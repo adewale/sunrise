@@ -11,5 +11,6 @@ export type Env = Cloudflare.Env & {
   CLOUDFLARE_API_TOKEN?: string;
   GITHUB_QUEUE_NAME?: string;
   GITHUB_QUEUE_DLQ_NAME?: string;
+  PROJECT_LANDING?: string;
   TEST_GITHUB_FIXTURES?: string;
 };

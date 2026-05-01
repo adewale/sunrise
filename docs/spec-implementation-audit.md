@@ -71,7 +71,7 @@ These are not treated as bugs; the spec should be read with these product decisi
 
 ### GitHub discovery/enrichment
 
-Implemented or partially implemented: notifications, review-requested search, assigned search, authored PRs, authored issues, PRs in owned repos, involved search, discussions mentions, repository invitations, organization memberships, PR review/status enrichment for a bounded authored-PR subset, merge-conflict evidence from PR metadata, failed workflow runs, Dependabot alerts, code scanning alerts, secret scanning alerts, rate-limit snapshots, and repo-readiness probes for AGENTS.md/package.json/reality.manifest.md.
+Implemented or partially implemented: notifications, review-requested search, assigned search, authored PRs, authored issues, PRs in owned repos, involved search, discussions mentions, repository invitations, organization memberships, PR review/status enrichment for a bounded authored-PR subset, merge-conflict evidence from PR metadata, failed workflow runs, Dependabot alerts, code scanning alerts, secret scanning alerts, rate-limit snapshots, and repo-readiness probes for AGENTS.md/package.json.
 
 Still missing or incomplete from the larger spec:
 

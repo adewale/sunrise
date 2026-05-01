@@ -127,7 +127,6 @@ scan_runs
 scan_jobs
 action_items
 repo_snapshots
-repo_readiness_snapshots
 rate_limit_snapshots
 item_evidence
 ignored_items
@@ -534,8 +533,6 @@ These are all in product scope. The product goal is that the owner should not ne
 | Discussions mentioning me | Social/support follow-up. | P1/P2 | core |
 | Releases waiting on draft/publish | Ship loop may be open. | P2 | core |
 | Stale branches / open draft PRs | Cleanup/closure debt. | P2/P3 | core |
-| Repos missing agent instructions | Agentic readiness gap. | P2 | core |
-| Repos missing verify command | Verification gap. | P2 | core |
 | Recent high-velocity repos | WIP/context-switch warning. | P2 | core |
 | Sponsorship/funding notifications | Possibly actionable. | P3 | core/collapsed |
 | Stars/follows/forks | Usually weakly actionable, but useful ambient news. | P3 | collapsed |
@@ -713,7 +710,6 @@ Show as maintenance backlog.
 - PRs authored by me pending review for a long time
 - PRs authored by me with pending checks
 - active repos with recent high commit velocity but no recent release, deploy, or merged PR
-- active repos missing repo-local agent instructions such as `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.windsurfrules`, `.pi/skills/*`, or equivalent
 - active repos missing an obvious verification command in README/package scripts/CI
 - repos with repeated recent `fix`, `stabilize`, `guard`, `schema drift`, or `harden` commits suggesting reality was discovered late
 
@@ -967,39 +963,34 @@ active repo with high velocity + no recent release/merge/deploy → P2
 many simultaneous active repos above configured WIP limit → P2 operating-system warning
 ```
 
-### 9. Repo-local agentic engineering readiness
+### 9. Repository verification hints (optional)
+
+Use this for lightweight, opt-in detection of missing verification commands, not for enforcing project-specific documentation conventions.
+
 
 For repos on the active/high-priority allowlist, inspect a small set of files.
 
 Endpoints:
 
 ```http
-GET /repos/{owner}/{repo}/contents/AGENTS.md
-GET /repos/{owner}/{repo}/contents/CLAUDE.md
 GET /repos/{owner}/{repo}/contents/package.json
 GET /repos/{owner}/{repo}/contents/pyproject.toml
 GET /repos/{owner}/{repo}/contents/README.md
 GET /repos/{owner}/{repo}/contents/.github/workflows
-GET /repos/{owner}/{repo}/contents/reality.manifest.md
 GET /repos/{owner}/{repo}/contents/productized-learning.md
 ```
 
 Derived signals:
 
 ```txt
-missing agent instructions in active repo → P2
 missing obvious verify/test command → P1/P2 depending repo importance
 missing CI workflow in active repo → P2
-pipeline/search/sync repo missing reality.manifest.md → P2
-production-candidate repo missing release/deploy instructions → P2
 ```
 
 Action mapping:
 
 ```txt
-repo lacks AGENTS.md/CLAUDE.md → "Add repo-local agent instructions"
 repo lacks verify command → "Add a single verification command agents can run"
-repo lacks reality manifest for pipeline/search/sync project → "Capture real inputs, outputs, limits, repair path"
 ```
 
 ### 10. Cron + Queues: daily discovery, queued processing
@@ -1262,9 +1253,7 @@ type GitHubActionItem = {
     | "authored_pr_pending"
     | "authored_pr_unverified"
     | "stale_green_pr"
-    | "repo_missing_agent_instructions"
     | "repo_missing_verify_command"
-    | "repo_missing_reality_manifest"
     | "high_wip_warning"
     | "commit_velocity_warning"
     | "invitation"
@@ -1283,7 +1272,6 @@ type GitHubActionItem = {
     hasVerificationSummary?: boolean;
     hasAgentInstructions?: boolean;
     hasVerifyCommand?: boolean;
-    hasRealityManifest?: boolean;
     recentCommitCount?: number;
     recentFixCommitCount?: number;
     activeRepoCount?: number;
@@ -1338,9 +1326,7 @@ mention → "Reply to mention"
 pending_review → "Nudge reviewers or update PR"
 authored_pr_unverified → "Add verification summary or run the declared verify command"
 stale_green_pr → "Merge or close this green PR"
-repo_missing_agent_instructions → "Add AGENTS.md/CLAUDE.md with verification commands and project constraints"
 repo_missing_verify_command → "Add one obvious verify command for agents and humans"
-repo_missing_reality_manifest → "Capture real inputs, outputs, limits, failure modes, and repair path"
 high_wip_warning → "Choose active repos and archive/defer the rest"
 commit_velocity_warning → "Stop and characterize before more feature work"
 security_alert → "Triage security alert"
@@ -1380,7 +1366,7 @@ Daily discovery starts with all personal-action sources, but processes them in p
 9. failed workflow runs for owned/active repos
 10. Dependabot/code/secret scanning alerts where permissions allow
 11. discussions mentions where permissions/API shape allow
-12. releases, draft PRs, stale branches, repo-readiness, and WIP signals
+12. releases, draft PRs, stale branches, and WIP signals
 13. low-priority ambient notifications such as stars/forks/follows/sponsorship events
 
 Processing may be shallow on the first pass. The important rule is: discover all potentially relevant GitHub changes daily so the owner does not need GitHub Notifications as a backstop.
@@ -1429,7 +1415,6 @@ For an allowlist of active repos, add:
 2. stale green PR detection
 3. repo-local instruction detection
 4. verify-command detection
-5. optional `reality.manifest.md` detection for pipeline/search/sync repos
 
 Render a separate compact section:
 
@@ -1437,8 +1422,6 @@ Render a separate compact section:
 Loop closure:
 - PRs to merge/close
 - PRs to verify/explain
-- Active repos missing agent instructions
-- Active repos missing verify commands
 - WIP limit warning
 ```
 
@@ -1467,7 +1450,6 @@ The UI should show scan freshness and queue health so stale data does not masque
 - Can run read-only.
 - Makes API rate-limit usage visible.
 - Identifies authored PRs that are broken, conflicted, stale-green, or missing verification evidence.
-- Identifies active repos missing agent instructions or a clear verify command.
 - Surfaces WIP pressure when recent activity spans more active repos than the configured limit.
 - Separates human/social action items from engineering loop-closure items.
 - Hono/Inertia route can render the default inbox without a separate internal API endpoint.
@@ -1500,7 +1482,6 @@ participating threads
 repository/org invitations
 security alerts
 failed workflow runs
-repo-local readiness
 recent commit velocity / WIP
 ambient news: stars/forks/follows/sponsorship
 ```
@@ -1735,7 +1716,6 @@ Before adding features, prove the deploy path:
 - Should old authored PRs be treated as action items or archive?
 - What counts as verification evidence: check success, PR body checklist, comment, release, deploy URL, screenshot, or all of these?
 - How should the API distinguish healthy rapid iteration from repeated fix-forward churn?
-- Should repo-local readiness checks be allowlist-only to avoid noisy scans?
 - Should notifications be marked read by the tool, or remain read-only?
 - Which security-alert APIs are accessible with the chosen owner OAuth/GitHub App permissions?
 - Should the UI use Hono + Inertia as the default implementation stack, or remain API-first with a separate frontend?

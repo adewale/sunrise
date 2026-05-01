@@ -35,7 +35,6 @@ describe('GitHub enrichment fixtures', () => {
       if (u.includes('/search/issues')) return search([]);
       if (u.includes('/user/repos')) return Response.json([{ full_name: 'ade/noverify', owner: { login: 'ade' }, pushed_at: '2026-05-01T00:00:00Z' }, { full_name: 'ade/verify', owner: { login: 'ade' }, pushed_at: '2026-05-01T00:00:00Z' }]);
       if (u.includes('/repos/ade/noverify/contents/AGENTS.md') || u.includes('/repos/ade/verify/contents/AGENTS.md')) return Response.json({ ok: true });
-      if (u.includes('/repos/ade/noverify/contents/reality.manifest.md') || u.includes('/repos/ade/verify/contents/reality.manifest.md')) return Response.json({ ok: true });
       if (u.includes('/repos/ade/noverify/contents/package.json')) return Response.json({ content: btoa(JSON.stringify({ scripts: { start: 'node index.js' } })) });
       if (u.includes('/repos/ade/verify/contents/package.json')) return Response.json({ content: btoa(JSON.stringify({ scripts: { verify: 'npm test' } })) });
       if (u.includes('/rate_limit')) return Response.json({ resources: { core: { remaining: 4999, reset: 1770000000 } } });

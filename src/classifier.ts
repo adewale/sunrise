@@ -17,7 +17,6 @@ const directnessRank: Record<ActionKind, number> = {
   authored_pr_pending: 4,
   repo_missing_verify_command: 5,
   repo_missing_agent_instructions: 5,
-  repo_missing_reality_manifest: 5,
   high_wip_warning: 6,
   commit_velocity_warning: 6,
   maintenance: 7,
@@ -35,7 +34,6 @@ export function classifyChange(change: GitHubChange, ownerLogin: string): GitHub
     hasVerificationSummary: raw.hasVerificationSummary as boolean | undefined,
     hasAgentInstructions: raw.hasAgentInstructions as boolean | undefined,
     hasVerifyCommand: raw.hasVerifyCommand as boolean | undefined,
-    hasRealityManifest: raw.hasRealityManifest as boolean | undefined,
     recentCommitCount: raw.recentCommitCount as number | undefined,
     recentFixCommitCount: raw.recentFixCommitCount as number | undefined,
     activeRepoCount: raw.activeRepoCount as number | undefined,
@@ -78,7 +76,6 @@ export function classifyChange(change: GitHubChange, ownerLogin: string): GitHub
 
   if (change.subjectType === 'Repository' && raw.hasAgentInstructions === false) return make('P2', 'repo_missing_agent_instructions', 'Active repo lacks repo-local agent instructions.', 'Add AGENTS.md/CLAUDE.md with verification commands and project constraints');
   if (change.subjectType === 'Repository' && raw.hasVerifyCommand === false) return make('P2', 'repo_missing_verify_command', 'Active repo lacks one obvious verification command.', 'Add one obvious verify command for agents and humans');
-  if (change.subjectType === 'Repository' && raw.hasRealityManifest === false) return make('P2', 'repo_missing_reality_manifest', 'Project lacks a reality manifest for real inputs and repair paths.', 'Capture real inputs, outputs, limits, failure modes, and repair path');
   if (change.subjectType === 'WipSummary' && Number(raw.activeRepoCount ?? 0) > Number(raw.wipLimit ?? 3)) return make('P2', 'high_wip_warning', 'Recent work spans more active repos than the configured WIP limit.', 'Choose active repos and archive/defer the rest');
   if (Number(raw.recentFixCommitCount ?? 0) >= 3) return make('P2', 'commit_velocity_warning', 'Repeated fix/stabilize/harden commits suggest verification debt.', 'Stop and characterize before more feature work');
 

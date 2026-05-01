@@ -12,7 +12,6 @@ export type ActionKind =
   | 'stale_green_pr'
   | 'repo_missing_agent_instructions'
   | 'repo_missing_verify_command'
-  | 'repo_missing_reality_manifest'
   | 'high_wip_warning'
   | 'commit_velocity_warning'
   | 'invitation'
@@ -41,7 +40,6 @@ export type GitHubActionItem = {
     hasVerificationSummary?: boolean;
     hasAgentInstructions?: boolean;
     hasVerifyCommand?: boolean;
-    hasRealityManifest?: boolean;
     recentCommitCount?: number;
     recentFixCommitCount?: number;
     activeRepoCount?: number;

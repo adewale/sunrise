@@ -165,15 +165,13 @@ async function discoverRepoReadiness(runId: string, headers: Record<string, stri
   for (const repo of repos) {
     const fullName = String(repo.full_name ?? '');
     if (!fullName || String(repo.owner?.login ?? '').toLowerCase() !== ownerLogin.toLowerCase()) continue;
-    const [agents, packageJson, reality] = await Promise.all([
+    const [agents, packageJson] = await Promise.all([
       contentExists(headers, fullName, 'AGENTS.md'),
       hasVerifyCommand(headers, fullName),
-      contentExists(headers, fullName, 'reality.manifest.md'),
     ]);
     const pushed = String(repo.pushed_at ?? repo.updated_at ?? new Date().toISOString());
     if (!agents) out.push(repoReadinessChange(runId, fullName, pushed, 'repo_missing_agent_instructions', 'Active repo is missing AGENTS.md', { hasAgentInstructions: false }));
     if (!packageJson) out.push(repoReadinessChange(runId, fullName, pushed, 'repo_missing_verify_command', 'Active repo is missing an obvious package.json verify command', { hasVerifyCommand: false }));
-    if (!reality) out.push(repoReadinessChange(runId, fullName, pushed, 'repo_missing_reality_manifest', 'Active repo is missing reality.manifest.md', { hasRealityManifest: false }));
   }
   return out;
 }

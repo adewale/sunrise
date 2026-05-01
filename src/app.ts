@@ -377,13 +377,13 @@ function scanStatus(run: Record<string, any> | null) {
 }
 
 function renderDashboardHeader(props: any) {
-  return `<div class="header-extra"><div><p class="eyebrow">${escapeHtml(props.signedInAs)} · ${props.freshness.status}</p><strong>Inbox</strong><p class="header-meta">Last scan ${props.freshness.lastScanAt ?? 'never'}${props.rateLimit ? ` · rate limit ${props.rateLimit.remaining}` : ''}</p></div><div class="header-actions"><a class="button ghost" href="/settings">Settings</a><form method="post" action="/refresh"><button class="button primary">Manual refresh</button></form></div></div>`;
+  return `<div class="header-extra"><div><p class="eyebrow">${escapeHtml(props.signedInAs)} · ${props.freshness.status}</p><strong>Inbox</strong><p class="header-meta">Checked ${escapeHtml(formatDateTime(props.freshness.lastScanAt))}${props.rateLimit ? ` · rate limit ${props.rateLimit.remaining}` : ''}</p></div><div class="header-actions"><a class="button ghost" href="/settings">Settings</a><form method="post" action="/refresh"><button class="button primary">Manual refresh</button></form></div></div>`;
 }
 
 function renderDashboard(props: any) {
   return `${props.notice ? `<section class="setup-status ready">${escapeHtml(props.notice.message)}</section>` : ''}
   ${props.usingFixtures ? '<section class="setup-status"><strong>Test fixture mode is enabled.</strong> Dashboard items are sample data, not your live GitHub account. Remove TEST_GITHUB_FIXTURES in Cloudflare to use real GitHub data.</section>' : ''}
-  <div class="dashboard-layout"><section class="inbox panel"><div class="item-list inbox-list">${props.items.map((item: GitHubActionItem) => renderItem(item, props.signedInAs)).join('') || '<p class="empty">No GitHub events need your attention right now.</p>'}</div>${renderPagination(props.pagination)}</section><aside class="marginalia" aria-label="Dashboard statistics"><section class="panel stat-card"><p class="eyebrow">Counts</p><div class="stat-list">${renderStat('PRs', props.counts.pullRequests)}${renderStat('Issues', props.counts.issues)}${renderStat('My PRs · own repos', props.counts.myPrsOwnRepos)}${renderStat('My PRs · elsewhere', props.counts.myPrsOtherRepos)}${renderStat('PRs to my repos', props.counts.prsInMyRepos)}</div></section><section class="panel stat-card"><p class="eyebrow">Freshness</p><p><strong>${escapeHtml(props.freshness.status)}</strong></p><p class="muted">Last scan ${props.freshness.lastScanAt ?? 'never'}</p>${props.rateLimit ? `<p class="muted">GitHub rate limit ${props.rateLimit.remaining}</p>` : ''}<p><a class="button quiet" href="/settings">Inbox settings</a></p></section></aside></div>`;
+  <div class="dashboard-layout"><section class="inbox panel"><div class="item-list inbox-list">${props.items.map((item: GitHubActionItem) => renderItem(item, props.signedInAs)).join('') || '<p class="empty">No GitHub events need your attention right now.</p>'}</div>${renderPagination(props.pagination)}</section><aside class="marginalia" aria-label="Dashboard statistics"><section class="panel stat-card"><p class="eyebrow">Counts</p><div class="stat-list">${renderStat('PRs', props.counts.pullRequests)}${renderStat('Issues', props.counts.issues)}${renderStat('My PRs · own repos', props.counts.myPrsOwnRepos)}${renderStat('My PRs · elsewhere', props.counts.myPrsOtherRepos)}${renderStat('PRs to my repos', props.counts.prsInMyRepos)}</div></section><section class="panel stat-card"><p class="eyebrow">Freshness</p><p><strong>${escapeHtml(capitalize(props.freshness.status))}</strong></p><p class="muted">Last checked ${escapeHtml(formatDateTime(props.freshness.lastScanAt))}</p>${props.rateLimit ? `<p class="muted">GitHub rate limit ${props.rateLimit.remaining}</p>` : ''}<p><a class="button quiet" href="/settings">Inbox settings</a></p></section></aside></div>`;
 }
 
 function renderPagination(p: any) {
@@ -456,6 +456,17 @@ function formatInboxTime(value: string) {
     date: date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' }),
     time: date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }),
   };
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return 'not yet';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
+}
+
+function capitalize(value: string) {
+  return value ? value[0].toUpperCase() + value.slice(1) : value;
 }
 
 function renderSetupGuide(setup: SetupDiagnostics) {

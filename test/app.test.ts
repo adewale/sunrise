@@ -28,6 +28,9 @@ describe('Sunrise app routes', () => {
   it('renders dashboard as an inbox with marginal stats', async () => {
     const db = createMemoryDb();
     await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
+    await db.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, 0, 0)')
+      .bind('run1', 'manual', 'succeeded', '2026-04-30T00:00:00Z', 0, 0).run();
+    await db.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', '2026-04-30T00:00:00Z', 3, 'run1').run();
     await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
       .bind('i1', 'k1', 'P0', 'review_requested', 'Review the launch PR', 'o/r', 'https://github.com/o/r/pull/1', '2026-04-30T00:00:00Z', 'You were requested for review.', 'Review PR', '{}', 'notifications').run();
     await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
@@ -49,6 +52,9 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('Review requested');
     expect(html).toContain('My PR · other repo');
     expect(html).toContain('Other person’s PR · my repo');
+    expect(html).toContain('Last checked');
+    expect(html).toContain('30 Apr 2026, 00:00');
+    expect(html).not.toContain('Last scan 2026-04-30T00:00:00Z');
     expect(html).toContain('<span>PRs</span><strong>3</strong>');
     expect(html).toContain('<span>Issues</span><strong>0</strong>');
     expect(html).toContain('<span>My PRs · elsewhere</span><strong>1</strong>');

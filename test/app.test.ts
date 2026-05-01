@@ -59,6 +59,7 @@ describe('Sunrise app routes', () => {
     expect(html.indexOf('<button class="theme-toggle"')).toBeLessThan(html.indexOf('</header>'));
     expect(html).toContain('html:not([data-theme=dark])[data-daypart=morning]');
     expect(html).toContain('.site-header{position:fixed;z-index:19;top:0;left:0;right:0');
+    expect(html).toContain('border-radius:0 0 var(--radius) var(--radius)');
     expect(html).toContain('.site-header{position:sticky;top:0;left:0;right:auto;width:100%');
     expect(html).toContain('.header-extra form{display:block;flex:0 0 auto}');
     expect(html).toContain('.sun-icon{left:10px');

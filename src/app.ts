@@ -638,7 +638,7 @@ function renderBrandMark() {
 }
 
 function brandMarkSvgContent() {
-  return `<rect class="sky" width="64" height="64" rx="16"/><path class="tray" d="M12 38h40l-4 12H16z"/><path class="line" d="M20 44h24"/><circle class="sun" cx="28" cy="31" r="11"/><path class="ray" d="M28 12v5M12 31h5M39 20l4-4M17 20l-4-4"/><path class="moon" d="M45 18a10 10 0 1 0 0 20 12 12 0 0 1 0-20z"/>`;
+  return `<rect class="sky" width="64" height="64" rx="16"/><path class="tray" d="M12 38h40l-4 12H16z"/><path class="line" d="M20 44h24"/><circle class="sun" cx="28" cy="31" r="11"/><path class="ray" d="M28 12v5M12 31h5M39 20l4-4M17 20l-4-4"/><path class="moon" transform="translate(90 0) scale(-1 1)" d="M45 18a10 10 0 1 0 0 20 12 12 0 0 1 0-20z"/>`;
 }
 
 function themeScript() {

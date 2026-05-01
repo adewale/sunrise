@@ -10,7 +10,7 @@ export async function runDiscovery(env: Env, trigger: 'cron' | 'manual' = 'manua
   const now = new Date().toISOString();
   await retryD1(() => env.DB.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, 0, 0)').bind(runId, trigger, 'running', now).run());
   try {
-    const changes = env.TEST_GITHUB_FIXTURES === 'true' || !accessToken ? fixtureChanges(runId, env.OWNER_LOGIN ?? 'owner') : await discoverFromGitHub(runId, accessToken);
+    const changes = env.TEST_GITHUB_FIXTURES === 'true' || !accessToken ? fixtureChanges(runId, env.OWNER_LOGIN ?? 'owner') : await discoverFromGitHub(runId, accessToken, env.OWNER_LOGIN ?? '');
     for (const change of changes) await persistChange(env, change);
     await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', new Date().toISOString(), changes.length, runId).run());
     return { runId, candidateCount: changes.length };
@@ -65,15 +65,49 @@ export async function processGithubChange(env: Env, msg: ProcessGitHubChangeMess
   }
 }
 
-async function discoverFromGitHub(runId: string, token: string): Promise<GitHubChange[]> {
+async function discoverFromGitHub(runId: string, token: string, ownerLogin: string): Promise<GitHubChange[]> {
   const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'sunrise-dashboard' };
-  const res = await fetch('https://api.github.com/notifications?all=false&per_page=50', { headers });
-  const remaining = res.headers.get('x-ratelimit-remaining') ?? '';
-  const reset = res.headers.get('x-ratelimit-reset') ?? '';
-  if (!res.ok) throw new Error(`GitHub notifications failed: ${res.status}`);
-  const notifications = await res.json<any[]>();
-  void remaining; void reset;
-  return notifications.map((n) => ({
+  const [notifications, reviewRequests, assigned, authoredPrs, authoredIssues, involved] = await Promise.all([
+    fetchPaginated<any>('https://api.github.com/notifications?all=false&per_page=100', headers, 'GitHub notifications'),
+    searchIssues(headers, 'search/review-requests', `is:pr is:open review-requested:${ownerLogin} archived:false`),
+    searchIssues(headers, 'search/assigned', `is:open assignee:${ownerLogin} archived:false`),
+    searchIssues(headers, 'search/authored-prs', `is:pr is:open author:${ownerLogin} archived:false`),
+    searchIssues(headers, 'search/created-issues', `is:issue is:open author:${ownerLogin} archived:false`),
+    searchIssues(headers, 'search/involved', `is:open involves:${ownerLogin} archived:false`),
+  ]);
+  return dedupeChanges([
+    ...notifications.map((n) => notificationToChange(runId, n)),
+    ...reviewRequests.map((i) => issueSearchToChange(runId, i, 'search/review-requests', 'review_requested')),
+    ...assigned.map((i) => issueSearchToChange(runId, i, 'search/assigned', 'assign')),
+    ...authoredPrs.map((i) => issueSearchToChange(runId, i, 'search/authored-prs', 'author')),
+    ...authoredIssues.map((i) => issueSearchToChange(runId, i, 'search/created-issues', 'author')),
+    ...involved.map((i) => issueSearchToChange(runId, i, 'search/involved', 'comment')),
+  ]);
+}
+
+async function fetchPaginated<T>(firstUrl: string, headers: Record<string, string>, label: string, maxPages = 5): Promise<T[]> {
+  const out: T[] = [];
+  let url: string | null = firstUrl;
+  for (let page = 0; url && page < maxPages; page++) {
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`${label} failed: ${res.status}`);
+    const json = await res.json<any>();
+    out.push(...(Array.isArray(json) ? json : json.items ?? []));
+    url = nextLink(res.headers.get('link'));
+  }
+  return out;
+}
+
+async function searchIssues(headers: Record<string, string>, endpoint: string, query: string) {
+  return fetchPaginated<any>(`https://api.github.com/search/issues?q=${encodeURIComponent(query)}&sort=updated&order=desc&per_page=100`, headers, endpoint);
+}
+
+function nextLink(link: string | null): string | null {
+  return link?.split(',').map((part) => part.trim()).find((part) => part.includes('rel="next"'))?.match(/<([^>]+)>/)?.[1] ?? null;
+}
+
+function notificationToChange(runId: string, n: any): GitHubChange {
+  return {
     id: crypto.randomUUID(),
     runId,
     canonicalSubjectKey: canonicalKey(n),
@@ -84,7 +118,32 @@ async function discoverFromGitHub(runId: string, token: string): Promise<GitHubC
     htmlUrl: n.subject?.latest_comment_url ?? n.repository?.html_url ?? n.url,
     updatedAt: n.updated_at,
     raw: { reason: n.reason, title: n.subject?.title, unread: n.unread },
-  }));
+  };
+}
+
+function issueSearchToChange(runId: string, item: any, endpoint: string, reason: string): GitHubChange {
+  const isPr = Boolean(item.pull_request);
+  return {
+    id: crypto.randomUUID(),
+    runId,
+    canonicalSubjectKey: String(item.html_url ?? item.url ?? item.id).replace('https://github.com/', 'github:'),
+    sourceEndpoint: endpoint,
+    repo: String(item.repository_url ?? '').replace('https://api.github.com/repos/', ''),
+    subjectType: isPr ? 'PullRequest' : 'Issue',
+    subjectUrl: item.url,
+    htmlUrl: item.html_url,
+    updatedAt: item.updated_at ?? item.created_at ?? new Date().toISOString(),
+    raw: { reason, title: item.title, author: item.user?.login, checks: isPr ? 'pending' : undefined, comments: item.comments, state: item.state },
+  };
+}
+
+function dedupeChanges(changes: GitHubChange[]): GitHubChange[] {
+  const byKey = new Map<string, GitHubChange>();
+  for (const change of changes) {
+    const existing = byKey.get(change.canonicalSubjectKey);
+    if (!existing || Date.parse(change.updatedAt) > Date.parse(existing.updatedAt)) byKey.set(change.canonicalSubjectKey, change);
+  }
+  return [...byKey.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 }
 
 function canonicalKey(n: any): string {

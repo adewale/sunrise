@@ -1,0 +1,82 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { runDiscovery } from '../src/scanner';
+import type { Env } from '../src/env';
+import { createMemoryDb } from './memory-db';
+
+describe('GitHub discovery', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('paginates notifications and discovers open issues, PRs, and involved threads', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/notifications') && !u.includes('page=2')) {
+        return Response.json([
+          notification('mention', 'Mentioned thread', 'https://api.github.com/repos/o/r/issues/1', '2026-05-01T10:00:00Z'),
+        ], { headers: { link: '<https://api.github.com/notifications?all=false&per_page=100&page=2>; rel="next"' } });
+      }
+      if (u.includes('/notifications') && u.includes('page=2')) {
+        return Response.json([
+          notification('subscribed', 'Second page notification', 'https://api.github.com/repos/o/r/issues/2', '2026-05-01T09:00:00Z'),
+        ]);
+      }
+      if (u.includes('/search/issues')) {
+        const query = decodeURIComponent(new URL(u).searchParams.get('q') ?? '');
+        if (query.includes('review-requested:ade')) return search([issue('Review me', 'https://github.com/o/r/pull/3', '2026-05-01T12:00:00Z', 'teammate')]);
+        if (query.includes('assignee:ade')) return search([issue('Assigned issue', 'https://github.com/o/r/issues/4', '2026-05-01T11:00:00Z', 'teammate')]);
+        if (query.includes('is:pr') && query.includes('author:ade')) return search([issue('Authored PR', 'https://github.com/o/r/pull/5', '2026-05-01T08:00:00Z', 'ade')]);
+        if (query.includes('is:issue') && query.includes('author:ade')) return search([issue('Authored issue', 'https://github.com/o/r/issues/6', '2026-05-01T07:00:00Z', 'ade')]);
+        if (query.includes('involves:ade')) return search([issue('Active discussion', 'https://github.com/o/r/issues/7', '2026-05-01T06:00:00Z', 'teammate')]);
+      }
+      return Response.json([]);
+    }));
+
+    const db = createMemoryDb();
+    const result = await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
+
+    expect(result.candidateCount).toBe(7);
+    const changes = await db.prepare('SELECT * FROM github_changes').all<Record<string, any>>();
+    expect(changes.results.map((row) => row.source_endpoint)).toEqual(expect.arrayContaining([
+      'notifications',
+      'search/review-requests',
+      'search/assigned',
+      'search/authored-prs',
+      'search/created-issues',
+      'search/involved',
+    ]));
+    const items = await db.prepare('SELECT * FROM action_items').all<Record<string, any>>();
+    expect(items.results.map((row) => row.kind)).toEqual(expect.arrayContaining([
+      'mention',
+      'review_requested',
+      'assigned',
+      'authored_pr_pending',
+      'maintenance',
+      'notification',
+    ]));
+  });
+});
+
+function notification(reason: string, title: string, subjectUrl: string, updatedAt: string) {
+  return {
+    reason,
+    updated_at: updatedAt,
+    repository: { full_name: 'o/r', html_url: 'https://github.com/o/r' },
+    subject: { type: 'Issue', title, url: subjectUrl },
+  };
+}
+
+function issue(title: string, htmlUrl: string, updatedAt: string, author: string) {
+  return {
+    title,
+    html_url: htmlUrl,
+    url: htmlUrl.replace('https://github.com/', 'https://api.github.com/repos/'),
+    repository_url: 'https://api.github.com/repos/o/r',
+    updated_at: updatedAt,
+    user: { login: author },
+    pull_request: htmlUrl.includes('/pull/') ? {} : undefined,
+    state: 'open',
+  };
+}
+
+function search(items: any[]) {
+  return Response.json({ total_count: items.length, items });
+}

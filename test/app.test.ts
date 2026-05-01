@@ -46,6 +46,8 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('@media(max-width:760px){main{width:min(100% - 20px,1120px);margin-top:12px');
     expect(html).toContain('.site-header{position:sticky;top:0;left:0;right:auto;width:100%');
     expect(html).toContain('.header-extra form{display:block;flex:0 0 auto}');
+    expect(html).toContain('.sun-icon{left:10px');
+    expect(html).toContain('.moon-icon{right:10px');
     expect(html).toContain('Manual refresh');
     expect(html).not.toContain('Ignore</button>');
     expect(html).not.toContain('Recent signal');

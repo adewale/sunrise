@@ -10,7 +10,12 @@ export default {
   },
   async queue(batch: MessageBatch<QueueMessage>, env: Env, ctx: ExecutionContext) {
     for (const message of batch.messages) {
-      ctx.waitUntil(processGithubChange(env, message.body).then(() => message.ack()).catch((error) => { console.log(JSON.stringify({ level: 'error', msg: 'queue failed', changeId: message.body.changeId, error: error instanceof Error ? error.message : String(error) })); message.retry(); }));
+      if (message.body.kind === 'setup-diagnostic') {
+        message.ack();
+        continue;
+      }
+      const body = message.body;
+      ctx.waitUntil(processGithubChange(env, body).then(() => message.ack()).catch((error) => { console.log(JSON.stringify({ level: 'error', msg: 'queue failed', changeId: body.changeId, error: error instanceof Error ? error.message : String(error) })); message.retry(); }));
     }
   },
 };

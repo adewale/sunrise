@@ -60,4 +60,7 @@ export type GitHubChange = {
   raw: Record<string, unknown>;
 };
 
-export type QueueMessage = { kind: 'process-github-change'; runId: string; changeId: string };
+export type QueueMessage =
+  | { kind: 'process-github-change'; runId: string; changeId: string }
+  | { kind: 'setup-diagnostic'; diagnosticId: string; createdAt: string };
+

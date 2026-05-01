@@ -5,6 +5,7 @@ import { createMemoryDb } from './memory-db';
 
 describe('Sunrise app routes', () => {
   afterEach(() => vi.restoreAllMocks());
+  const queue = { send: vi.fn(async () => undefined) } as unknown as Queue;
   it('renders public landing with deploy CTA and setup checklist when signed out', async () => {
     const env = { DB: createMemoryDb(), GITHUB_CLIENT_ID: '', OWNER_LOGIN: 'ade', SESSION_SECRET: 'x' } as unknown as Env;
     const res = await app.request('/', {}, env);
@@ -62,7 +63,7 @@ describe('Sunrise app routes', () => {
       if (String(url).startsWith('https://api.github.com/users/ade')) return Response.json({ login: 'ade' });
       return new Response('ok');
     }));
-    const env = { DB: createMemoryDb(), GITHUB_QUEUE: {} as Queue, GITHUB_CLIENT_ID: 'bogus', GITHUB_CLIENT_SECRET: 'secret', OWNER_LOGIN: 'ade', SESSION_SECRET: 'long-enough-session-secret' } as unknown as Env;
+    const env = { DB: createMemoryDb(), GITHUB_QUEUE: queue, GITHUB_CLIENT_ID: 'bogus', GITHUB_CLIENT_SECRET: 'secret', OWNER_LOGIN: 'ade', SESSION_SECRET: 'long-enough-session-secret' } as unknown as Env;
     const res = await app.request('/setup?json', {}, env);
     const props = await res.json() as any;
     const oauth = props.checks.find((check: any) => check.id === 'github_client_id');
@@ -77,7 +78,7 @@ describe('Sunrise app routes', () => {
       if (String(url).startsWith('https://api.github.com/users/adewale')) return Response.json({ login: 'adewale' });
       return new Response('not found', { status: 404 });
     }));
-    const env = { DB: createMemoryDb(), GITHUB_QUEUE: {} as Queue, GITHUB_CLIENT_ID: 'Ov23liValidClientId', GITHUB_CLIENT_SECRET: 'secret', OWNER_LOGIN: 'https://github.com/adewale', SESSION_SECRET: 'long-enough-session-secret' } as unknown as Env;
+    const env = { DB: createMemoryDb(), GITHUB_QUEUE: queue, GITHUB_CLIENT_ID: 'Ov23liValidClientId', GITHUB_CLIENT_SECRET: 'secret', OWNER_LOGIN: 'https://github.com/adewale', SESSION_SECRET: 'long-enough-session-secret' } as unknown as Env;
     const res = await app.request('/setup?json', {}, env);
     const props = await res.json() as any;
     const owner = props.checks.find((check: any) => check.id === 'owner_login');
@@ -91,7 +92,7 @@ describe('Sunrise app routes', () => {
       if (String(url).startsWith('https://api.github.com/users/ade')) return Response.json({ login: 'ade' });
       return new Response('ok');
     }));
-    const env = { DB: createMemoryDb(), GITHUB_QUEUE: {} as Queue, GITHUB_CLIENT_ID: 'Ov23liValidClientId', GITHUB_CLIENT_SECRET: 'secret', OWNER_LOGIN: 'ade', SESSION_SECRET: 'long-enough-session-secret' } as unknown as Env;
+    const env = { DB: createMemoryDb(), GITHUB_QUEUE: queue, GITHUB_CLIENT_ID: 'Ov23liValidClientId', GITHUB_CLIENT_SECRET: 'secret', OWNER_LOGIN: 'ade', SESSION_SECRET: 'long-enough-session-secret' } as unknown as Env;
     const res = await app.request('/setup?json', {}, env);
     const props = await res.json() as any;
     expect(props.callbackUrl).toBe('http://localhost/callback');
@@ -105,7 +106,7 @@ describe('Sunrise app routes', () => {
       if (String(url).startsWith('https://api.github.com/users/ade')) return Response.json({ login: 'ade' });
       return new Response('ok');
     }));
-    const env = { DB: createMemoryDb(), GITHUB_QUEUE: {} as Queue, GITHUB_CLIENT_ID: 'Y37UUaM_wXXgc3k', GITHUB_CLIENT_SECRET: 'secret', OWNER_LOGIN: 'ade', SESSION_SECRET: 'long-enough-session-secret' } as unknown as Env;
+    const env = { DB: createMemoryDb(), GITHUB_QUEUE: queue, GITHUB_CLIENT_ID: 'Y37UUaM_wXXgc3k', GITHUB_CLIENT_SECRET: 'secret', OWNER_LOGIN: 'ade', SESSION_SECRET: 'long-enough-session-secret' } as unknown as Env;
     const res = await app.request('/login', {}, env);
     const html = await res.text();
     expect(res.status).toBe(400);

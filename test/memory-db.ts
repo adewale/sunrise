@@ -1,6 +1,6 @@
 type Row = Record<string, any>;
 
-const tables = ['sessions','oauth_states','scan_runs','github_changes','action_items','item_evidence','rate_limit_snapshots','ignored_items'];
+const tables = ['settings','sessions','oauth_states','scan_runs','github_changes','action_items','item_evidence','rate_limit_snapshots','ignored_items'];
 
 export function createMemoryDb(): D1Database {
   const store: Record<string, Row[]> = Object.fromEntries(tables.map((t) => [t, []]));
@@ -22,7 +22,9 @@ export function createMemoryDb(): D1Database {
 
 function execute(store: Record<string, Row[]>, sql: string, v: any[]) {
   const normalized = sql.replace(/\s+/g, ' ').trim();
-  if (/^INSERT INTO sessions/i.test(normalized)) store.sessions.push(row(['id','github_login','github_id','access_token','expires_at','created_at'], literalOrBound(normalized, v)));
+  if (/^INSERT INTO settings/i.test(normalized)) upsert(store.settings, 'key', row(['key','value','updated_at'], normalized.includes("'oauth_last_error'") ? ['oauth_last_error', v[0], v[1]] : v));
+  else if (/^DELETE FROM settings/i.test(normalized)) store.settings = store.settings.filter((r) => r.key !== v[0]);
+  else if (/^INSERT INTO sessions/i.test(normalized)) store.sessions.push(row(['id','github_login','github_id','access_token','expires_at','created_at'], literalOrBound(normalized, v)));
   else if (/^INSERT INTO oauth_states/i.test(normalized)) store.oauth_states.push(row(['state','code_verifier','expires_at','created_at'], v));
   else if (/^DELETE FROM oauth_states/i.test(normalized)) store.oauth_states = store.oauth_states.filter((r) => r.state !== v[0]);
   else if (/^DELETE FROM sessions/i.test(normalized)) store.sessions = store.sessions.filter((r) => r.id !== v[0]);
@@ -38,6 +40,7 @@ function execute(store: Record<string, Row[]>, sql: string, v: any[]) {
 
 function select(store: Record<string, Row[]>, sql: string, v: any[]) {
   const normalized = sql.replace(/\s+/g, ' ').trim();
+  if (/FROM settings/i.test(normalized)) return store.settings.filter((r) => normalized.includes("oauth_last_error") ? r.key === 'oauth_last_error' : (!v[0] || r.key === v[0]));
   if (/FROM sessions/i.test(normalized)) return store.sessions.filter((r) => !v[0] || r.id === v[0]);
   if (/FROM oauth_states/i.test(normalized)) return v.length ? store.oauth_states.filter((r) => r.state === v[0]) : store.oauth_states;
   if (/FROM scan_runs/i.test(normalized)) return [...store.scan_runs].sort(desc('started_at')).slice(0, normalized.includes('LIMIT 1') ? 1 : 10);

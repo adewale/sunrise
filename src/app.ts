@@ -173,8 +173,8 @@ async function dashboardProps(env: Env, login: string, page = 1) {
       createdIssuesNeedingResponse: allItems.filter((i) => i.kind === 'maintenance').length,
       pullRequests: allItems.filter(isPullRequestItem).length,
       issues: allItems.filter(isIssueItem).length,
-      myPrsOwnRepos: allItems.filter((i) => isAuthoredPrItem(i) && i.evidence?.isOwnRepo === true).length,
-      myPrsOtherRepos: allItems.filter((i) => isAuthoredPrItem(i) && i.evidence?.isOwnRepo !== true).length,
+      myPrsOwnRepos: allItems.filter((i) => isAuthoredPrItem(i) && isOwnRepoItem(i, login)).length,
+      myPrsOtherRepos: allItems.filter((i) => isAuthoredPrItem(i) && !isOwnRepoItem(i, login)).length,
       prsInMyRepos: allItems.filter((i) => i.kind === 'repo_pr').length,
       authoredOpenPrs: allItems.filter(isAuthoredPrItem).length,
       reviewRequests: allItems.filter((i) => i.kind === 'review_requested').length,
@@ -196,6 +196,11 @@ function isPullRequestItem(item: GitHubActionItem) {
 
 function isAuthoredPrItem(item: GitHubActionItem) {
   return item.kind.startsWith('authored_pr') || item.kind === 'stale_green_pr';
+}
+
+function isOwnRepoItem(item: GitHubActionItem, ownerLogin: string) {
+  if (item.evidence?.isOwnRepo !== undefined) return item.evidence.isOwnRepo;
+  return item.repo.split('/')[0]?.toLowerCase() === ownerLogin.toLowerCase();
 }
 
 function isIssueItem(item: GitHubActionItem) {
@@ -376,7 +381,7 @@ function renderDashboardHeader(props: any) {
 function renderDashboard(props: any) {
   return `${props.notice ? `<section class="setup-status ready">${escapeHtml(props.notice.message)}</section>` : ''}
   ${props.usingFixtures ? '<section class="setup-status"><strong>Test fixture mode is enabled.</strong> Dashboard items are sample data, not your live GitHub account. Remove TEST_GITHUB_FIXTURES in Cloudflare to use real GitHub data.</section>' : ''}
-  <div class="dashboard-layout"><section class="inbox panel"><div class="item-list inbox-list">${props.items.map(renderItem).join('') || '<p class="empty">No GitHub events need your attention right now.</p>'}</div>${renderPagination(props.pagination)}</section><aside class="marginalia" aria-label="Dashboard statistics"><section class="panel stat-card"><p class="eyebrow">Counts</p><div class="stat-list">${renderStat('PRs', props.counts.pullRequests)}${renderStat('Issues', props.counts.issues)}${renderStat('My PRs · own repos', props.counts.myPrsOwnRepos)}${renderStat('My PRs · elsewhere', props.counts.myPrsOtherRepos)}${renderStat('PRs to my repos', props.counts.prsInMyRepos)}</div></section><section class="panel stat-card"><p class="eyebrow">Freshness</p><p><strong>${escapeHtml(props.freshness.status)}</strong></p><p class="muted">Last scan ${props.freshness.lastScanAt ?? 'never'}</p>${props.rateLimit ? `<p class="muted">GitHub rate limit ${props.rateLimit.remaining}</p>` : ''}<p><a class="button quiet" href="/settings">Inbox settings</a></p></section></aside></div>`;
+  <div class="dashboard-layout"><section class="inbox panel"><div class="item-list inbox-list">${props.items.map((item: GitHubActionItem) => renderItem(item, props.signedInAs)).join('') || '<p class="empty">No GitHub events need your attention right now.</p>'}</div>${renderPagination(props.pagination)}</section><aside class="marginalia" aria-label="Dashboard statistics"><section class="panel stat-card"><p class="eyebrow">Counts</p><div class="stat-list">${renderStat('PRs', props.counts.pullRequests)}${renderStat('Issues', props.counts.issues)}${renderStat('My PRs · own repos', props.counts.myPrsOwnRepos)}${renderStat('My PRs · elsewhere', props.counts.myPrsOtherRepos)}${renderStat('PRs to my repos', props.counts.prsInMyRepos)}</div></section><section class="panel stat-card"><p class="eyebrow">Freshness</p><p><strong>${escapeHtml(props.freshness.status)}</strong></p><p class="muted">Last scan ${props.freshness.lastScanAt ?? 'never'}</p>${props.rateLimit ? `<p class="muted">GitHub rate limit ${props.rateLimit.remaining}</p>` : ''}<p><a class="button quiet" href="/settings">Inbox settings</a></p></section></aside></div>`;
 }
 
 function renderPagination(p: any) {
@@ -422,9 +427,9 @@ function renderDesignLanguage() {
   <section class="section panel"><div class="section-head"><div><p class="eyebrow">Table</p><h2>Runs table</h2></div></div><table><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Candidates</th></tr></thead><tbody><tr><td>2026-05-01</td><td>manual</td><td><span class="badge">succeeded</span></td><td>18</td></tr></tbody></table></section>`;
 }
 
-function renderItem(item: GitHubActionItem) {
+function renderItem(item: GitHubActionItem, ownerLogin = '') {
   const when = formatInboxTime(item.updatedAt);
-  const chips = [itemTypeLabel(item), itemRelationshipLabel(item), item.repo].filter(Boolean).map((chip) => `<span class="chip">${escapeHtml(chip)}</span>`).join('');
+  const chips = [itemTypeLabel(item), itemRelationshipLabel(item, ownerLogin), item.repo].filter(Boolean).map((chip) => `<span class="chip">${escapeHtml(chip)}</span>`).join('');
   return `<article class="item"><time class="item-time" datetime="${escapeHtml(item.updatedAt)}"><span>${escapeHtml(when.date)}</span><strong>${escapeHtml(when.time)}</strong></time><div class="item-main"><div class="chips">${chips}</div><a class="item-title" href="${item.url}">${escapeHtml(item.title)}</a><p>${escapeHtml(item.reason)}</p><p class="action">${escapeHtml(item.suggestedAction)}</p></div></article>`;
 }
 
@@ -434,8 +439,8 @@ function itemTypeLabel(item: GitHubActionItem) {
   return item.kind.replaceAll('_', ' ');
 }
 
-function itemRelationshipLabel(item: GitHubActionItem) {
-  if (isAuthoredPrItem(item)) return item.evidence?.isOwnRepo ? 'My PR · own repo' : 'My PR · other repo';
+function itemRelationshipLabel(item: GitHubActionItem, ownerLogin = '') {
+  if (isAuthoredPrItem(item)) return isOwnRepoItem(item, ownerLogin) ? 'My PR · own repo' : 'My PR · other repo';
   if (item.kind === 'repo_pr') return 'Other person’s PR · my repo';
   if (item.kind === 'review_requested') return 'Review requested';
   if (item.kind === 'maintenance') return 'Created by me';

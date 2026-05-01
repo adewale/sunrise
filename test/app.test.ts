@@ -71,6 +71,25 @@ describe('Sunrise app routes', () => {
     expect(page2Props.items.length).toBe(5);
   });
 
+  it('derives authored PR ownership counts from repo owner when evidence is missing', async () => {
+    const db = createMemoryDb();
+    await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
+    const generated = Array.from({ length: 30 }, (_, i) => ({ repo: i % 2 === 0 ? `ade/project-${i}` : `other/project-${i}`, own: i % 2 === 0 }));
+    for (const [i, item] of generated.entries()) {
+      await db.prepare('INSERT INTO action_items (id, canonical_subject_key, priority, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+        .bind(`pr${i}`, `pr-k${i}`, 'P2', 'authored_pr_pending', `PR ${i}`, item.repo, `https://github.com/${item.repo}/pull/${i}`, `2026-04-30T${String(23 - (i % 24)).padStart(2, '0')}:00:00Z`, 'Pending', 'Nudge reviewers', '{}', 'search').run();
+    }
+
+    const json = await app.request('/dashboard?json', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
+    const props = await json.json() as any;
+    expect(props.counts.myPrsOwnRepos).toBe(generated.filter((item) => item.own).length);
+    expect(props.counts.myPrsOtherRepos).toBe(generated.filter((item) => !item.own).length);
+
+    const html = await (await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env)).text();
+    expect(html).toContain('My PR · own repo');
+    expect(html).toContain('My PR · other repo');
+  });
+
   it('lets the owner change inbox page size in settings', async () => {
     const db = createMemoryDb();
     await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();

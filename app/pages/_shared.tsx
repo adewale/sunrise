@@ -46,7 +46,7 @@ export function Item({ item, ownerLogin = '' }: { item: ActionItem; ownerLogin?:
 function checkDot(item: ActionItem) {
   const checks = item.evidence?.checks;
   if (!checks) return null;
-  return <span className={`check-status ${checks}`}>{checks}</span>;
+  return <span className={`check-status ${checks}`} title={`Checks ${checks}`} aria-label={`Checks ${checks}`} />;
 }
 
 export function formatInboxTime(value: string) {

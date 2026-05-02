@@ -186,14 +186,12 @@ async function runsProps(env: Env, runId?: string, refresh?: string, candidateCo
   const processed = await countRows(env.DB, "SELECT COUNT(*) AS count FROM github_changes WHERE processing_status = 'processed'");
   const queue = await queueStats(env, { pending, failed, processed, dlq: 'sunrise-github-dlq', maxBatchSize: 10, maxBatchTimeout: 30, maxRetries: 3 });
   const notice = refreshNotice(refresh, activeRun, candidateCount, error);
-  const autoRefresh = refresh === 'started' && Boolean(activeRun) && Number(activeRun?.processed_count ?? 0) < Number(activeRun?.candidate_count ?? candidateCount ?? 0);
   return {
     product: 'Sunrise',
     runs,
     activeRunId: runId ?? null,
     activeRun,
     notice,
-    autoRefresh,
     freshness: { lastScanAt: lastRun?.completed_at ?? lastRun?.started_at ?? null, status: scanStatus(lastRun) },
     rateLimit: rate ? { resource: rate.resource, remaining: rate.remaining, resetAt: rate.reset_at, capturedAt: rate.captured_at } : null,
     queue,
@@ -208,7 +206,7 @@ function refreshNotice(refresh?: string, activeRun?: Record<string, any> | null,
   const status = activeRun?.status ?? 'queued';
   if (found === 0) return { kind: 'success', message: 'Manual refresh completed. No GitHub events were found.' };
   if (processed >= found) return { kind: 'success', message: `Manual refresh completed. Processed ${processed} of ${found} GitHub events.` };
-  return { kind: 'running', message: `Manual refresh started. Found ${found} GitHub events; processed ${processed} so far. Status: ${status}. This page will update while processing continues.` };
+  return { kind: 'running', message: `Manual refresh started. Found ${found} GitHub events; processed ${processed} so far. Status: ${status}. Reload manually if you want a newer snapshot.` };
 }
 
 async function countRows(db: D1Database, sql: string) {
@@ -697,7 +695,7 @@ function themeScript() {
 }
 
 function inertiaClientBundle() {
-  return `(() => {\n  const version = 'sunrise-1';\n  function shouldHandle(anchor) {\n    return anchor && anchor.origin === location.origin && !anchor.target && !anchor.hasAttribute('download') && !anchor.href.includes('/login') && !anchor.href.includes('/callback') && !anchor.href.includes('/favicon.svg');\n  }\n  async function visit(url) {\n    const res = await fetch(url, { headers: { 'X-Inertia': 'true', 'X-Inertia-Version': version, Accept: 'application/json' } });\n    if (res.status === 409) { location.href = res.headers.get('X-Inertia-Location') || url; return; }\n    if (!res.ok) { location.href = url; return; }\n    const page = await res.json();\n    const full = await fetch(page.url || url, { headers: { Accept: 'text/html' } });\n    const text = await full.text();\n    const doc = new DOMParser().parseFromString(text, 'text/html');\n    document.title = doc.title;\n    document.querySelector('.site-header')?.replaceWith(doc.querySelector('.site-header'));\n    document.querySelector('#content')?.replaceWith(doc.querySelector('#content'));\n    const oldPage = document.querySelector('script[data-page="app"]');\n    const newPage = doc.querySelector('script[data-page="app"]');\n    if (oldPage && newPage) oldPage.textContent = newPage.textContent;\n    history.pushState({}, '', page.url || url);\n    dispatchEvent(new Event('sunrise:navigated'));\n  }\n  document.addEventListener('click', (event) => {\n    const anchor = event.target.closest && event.target.closest('a[href]');\n    if (!shouldHandle(anchor)) return;\n    event.preventDefault();\n    visit(anchor.href).catch(() => { location.href = anchor.href; });\n  });\n  addEventListener('popstate', () => location.reload());\n})();`;
+  return `(() => {\n  const version = 'sunrise-1';\n  function shouldHandle(anchor) {\n    return anchor && anchor.origin === location.origin && !anchor.target && !anchor.hasAttribute('download') && !anchor.href.includes('/login') && !anchor.href.includes('/callback') && !anchor.href.includes('/favicon.svg');\n  }\n  function shouldHandleForm(form) {\n    return form && form.action && new URL(form.action, location.href).origin === location.origin && !form.target && !form.hasAttribute('data-native');\n  }\n  async function renderUrl(url, push) {\n    const res = await fetch(url, { headers: { 'X-Inertia': 'true', 'X-Inertia-Version': version, Accept: 'application/json' } });\n    if (!res.ok || res.status === 409) throw new Error('Navigation unavailable');\n    const page = await res.json();\n    const full = await fetch(page.url || url, { headers: { Accept: 'text/html' } });\n    if (!full.ok) throw new Error('Page unavailable');\n    const text = await full.text();\n    const doc = new DOMParser().parseFromString(text, 'text/html');\n    document.title = doc.title;\n    document.querySelector('.site-header')?.replaceWith(doc.querySelector('.site-header'));\n    document.querySelector('#content')?.replaceWith(doc.querySelector('#content'));\n    const oldPage = document.querySelector('script[data-page="app"]');\n    const newPage = doc.querySelector('script[data-page="app"]');\n    if (oldPage && newPage) oldPage.textContent = newPage.textContent;\n    if (push) history.pushState({}, '', page.url || url);\n    dispatchEvent(new Event('sunrise:navigated'));\n  }\n  async function submit(form) {\n    const method = (form.method || 'GET').toUpperCase();\n    const action = new URL(form.action || location.href, location.href).toString();\n    const body = method === 'GET' ? undefined : new FormData(form);\n    const res = await fetch(action, { method, body, headers: { Accept: 'text/html' } });\n    await renderUrl(res.url || action, true);\n  }\n  document.addEventListener('click', (event) => {\n    const anchor = event.target.closest && event.target.closest('a[href]');\n    if (!shouldHandle(anchor)) return;\n    event.preventDefault();\n    renderUrl(anchor.href, true).catch(() => {});\n  });\n  document.addEventListener('submit', (event) => {\n    const form = event.target;\n    if (!shouldHandleForm(form)) return;\n    event.preventDefault();\n    submit(form).catch(() => {});\n  });\n  addEventListener('popstate', () => renderUrl(location.href, false).catch(() => {}));\n})();`;
 }
 
 function designCss() {

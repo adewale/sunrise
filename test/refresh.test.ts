@@ -28,7 +28,8 @@ describe('manual refresh lifecycle', () => {
     let html = await (await app.request('/runs?refresh=started&runId=run1&candidates=3', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db } as unknown as Env)).text();
     expect(html).toContain('Manual refresh started');
     expect(html).toContain('processed 0 so far');
-    expect(html).toContain('http-equiv="refresh"');
+    expect(html).toContain('Reload manually if you want a newer snapshot.');
+    expect(html).not.toContain('http-equiv="refresh"');
 
     await db.prepare('UPDATE scan_runs SET processed_count = processed_count + 1 WHERE id = ?').bind('run1').run();
     await db.prepare('UPDATE scan_runs SET processed_count = processed_count + 1 WHERE id = ?').bind('run1').run();

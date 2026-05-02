@@ -34,6 +34,9 @@ describe('Sunrise app routes', () => {
     expect(res.headers.get('content-type')).toContain('text/javascript');
     expect(js).toContain("X-Inertia");
     expect(js).toContain('history.pushState');
+    expect(js).toContain("document.addEventListener('submit'");
+    expect(js).not.toContain('location.reload');
+    expect(js).not.toContain('location.href =');
   });
 
   it('serves a sunrise inbox favicon with light and dark variants', async () => {

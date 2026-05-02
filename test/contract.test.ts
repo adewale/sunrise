@@ -23,7 +23,7 @@ describe('route prop contracts', () => {
     expect(props.pagination).toMatchObject({ page: 1, pageSize: 50, totalItems: 1 });
   });
 
-  it('returns stable runs props including queue, notice, and auto refresh state', async () => {
+  it('returns stable runs props including queue and a non-refreshing notice', async () => {
     const db = await signedInDb();
     await db.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, 0, 0)')
       .bind('run1', 'manual', 'succeeded', '2026-05-01T00:00:00Z', 0, 0).run();
@@ -31,7 +31,8 @@ describe('route prop contracts', () => {
     const res = await app.request('/runs?refresh=started&runId=run1&candidates=3', { headers: { Cookie: 'sunrise_session=sid', Accept: 'application/json' } }, { DB: db } as unknown as Env);
     const props = await res.json() as any;
     expect(props.notice.message).toContain('processed 0 so far');
-    expect(props.autoRefresh).toBe(true);
+    expect(props.notice.message).toContain('Reload manually');
+    expect(props.autoRefresh).toBeUndefined();
     expect(props.queue).toMatchObject({ pending: 0, failed: 0, source: 'd1' });
   });
 

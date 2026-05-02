@@ -89,7 +89,9 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('My open PRs');
     expect(html).toContain('My open issues');
     expect(html).toContain('q=is%3Aissue+is%3Aopen+author%3Aade+archived%3Afalse');
-    expect(html).toContain('href="https://github.com/settings/repositories" target="_blank" rel="noreferrer"');
+    expect(html).toContain('Invitation · ade/new');
+    expect(html).toContain('href="https://github.com/ade/new" target="_blank" rel="noreferrer"');
+    expect(html).not.toContain('href="https://github.com/settings/repositories" target="_blank" rel="noreferrer"');
     expect(html).not.toContain('href="https://github.com/notifications" target="_blank" rel="noreferrer"');
     expect(html).toContain('↗');
     expect(html).toContain('<span>PRs</span><strong>3</strong>');

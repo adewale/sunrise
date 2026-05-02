@@ -302,7 +302,7 @@ function unresolvedGitHubLinks(items: GitHubActionItem[], login: string) {
     unresolvedRow('assigned', 'Assigned to me', items.filter((i) => i.kind === 'assigned').length, '/issues/assigned'),
     unresolvedRow('mentions', 'Mentions', items.filter((i) => i.kind === 'mention').length, '/issues/mentioned'),
     unresolvedRow('failed-workflows', 'Failed workflows', items.filter((i) => i.kind === 'workflow_failure').length, '/actions'),
-    unresolvedRow('invitations', 'Invitations', items.filter((i) => i.kind === 'invitation').length, '/settings/repositories'),
+    ...items.filter((i) => i.kind === 'invitation').map(invitationLink),
   ];
   return rows.filter((row) => row.count > 0);
 }
@@ -311,6 +311,11 @@ function unresolvedRow(id: string, label: string, count: number, path: string, q
   const url = new URL(path, 'https://github.com');
   if (query) url.searchParams.set('q', query);
   return { id, label, count, href: url.toString(), query };
+}
+
+function invitationLink(item: GitHubActionItem) {
+  const label = item.repo ? `Invitation · ${item.repo}` : item.title;
+  return { id: `invitation-${item.canonicalSubjectKey}`, label, count: 1, href: item.url, query: 'Open the invited repository or organization in GitHub to accept or decline.' };
 }
 
 async function requireSession(c: any) {

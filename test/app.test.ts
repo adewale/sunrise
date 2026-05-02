@@ -77,6 +77,11 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('class="item-time"');
     expect(html.indexOf('class="item-time"')).toBeLessThan(html.indexOf('Review the launch PR'));
     expect(html).toContain('Review requested');
+    expect(html).toContain('time-section');
+    expect(html).toContain('type-icon');
+    expect(html).toContain('repo-avatar');
+    expect(html).toContain('updated ');
+    expect(html).toContain('Open in GitHub');
     expect(html).toContain('My PR · other repo');
     expect(html).toContain('Other person’s PR · my repo');
     expect(html).toContain('Checked');

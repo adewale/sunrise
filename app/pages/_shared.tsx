@@ -11,7 +11,7 @@ type ActionItem = {
   reason: string;
   suggestedAction: string;
   source: string;
-  evidence?: { isOwnRepo?: boolean; isAuthored?: boolean };
+  evidence?: { isOwnRepo?: boolean; isAuthored?: boolean; author?: string; checks?: string; mergeable?: string };
 };
 
 export function Stat({ label, value }: { label: string; value: ReactNode }) {
@@ -19,7 +19,7 @@ export function Stat({ label, value }: { label: string; value: ReactNode }) {
 }
 
 export function UnresolvedLink({ row }: { row: { label: string; count: number; href: string; query?: string } }) {
-  return <a className="stat unresolved-link" href={row.href} target="_blank" rel="noreferrer" title={row.query ? `Opens GitHub: ${row.query}` : 'Opens GitHub'}><span>{row.label}</span><strong>{row.count} ↗</strong></a>;
+  return <a className="stat unresolved-link" href={row.href} target="_blank" rel="noreferrer" title={row.query ? `Opens GitHub: ${row.query}` : 'Opens GitHub'}><span>{row.label}<em>Open in GitHub</em></span><strong>{row.count} ↗</strong></a>;
 }
 
 export function SetupGuide({ setup }: { setup: any }) {
@@ -38,7 +38,15 @@ export function SetupGuide({ setup }: { setup: any }) {
 export function Item({ item, ownerLogin = '' }: { item: ActionItem; ownerLogin?: string }) {
   const when = formatInboxTime(item.updatedAt);
   const chips = [itemTypeLabel(item), itemRelationshipLabel(item, ownerLogin), item.repo].filter(Boolean);
-  return <article className="item"><time className="item-time" dateTime={item.updatedAt}><span>{when.date}</span><strong>{when.time}</strong></time><div className="item-main"><div className="chips">{chips.map((chip) => <span className="chip" key={chip}>{chip}</span>)}</div><a className="item-title" href={item.url}>{item.title}</a><p>{item.reason}</p><p className="action">{item.suggestedAction}</p></div></article>;
+  const repoOwner = item.repo.split('/')[0] || 'github';
+  const author = item.evidence?.author;
+  return <article className="item"><time className="item-time" dateTime={item.updatedAt}><span>{when.date}</span><strong>{when.time}</strong></time><div className="item-main"><div className="item-topline"><span className="type-icon" aria-hidden="true">{itemIcon(item)}</span><img className="repo-avatar" src={`https://github.com/${repoOwner}.png?size=40`} alt="" loading="lazy" />{author ? <img className="author-avatar" src={`https://github.com/${author}.png?size=40`} alt="" loading="lazy" /> : null}<div className="chips">{chips.map((chip) => <span className="chip" key={chip}>{chip}</span>)}{checkDot(item)}</div></div><a className="item-title" href={item.url}>{item.title}</a><p>{item.reason}</p><p className="action">{item.suggestedAction} <span className="relative-time">· updated {relativeTime(item.updatedAt)}</span></p></div></article>;
+}
+
+function checkDot(item: ActionItem) {
+  const checks = item.evidence?.checks;
+  if (!checks) return null;
+  return <span className={`check-status ${checks}`}>{checks}</span>;
 }
 
 export function formatInboxTime(value: string) {
@@ -54,9 +62,20 @@ export function formatDateTime(value: string | null) {
   return date.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
 }
 
+function relativeTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const days = Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000));
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  return `${days}d ago`;
+}
+
 function isPullRequestItem(item: ActionItem) { return item.url.includes('/pull/') || item.kind.includes('pr') || item.kind === 'review_requested' || item.kind === 'repo_pr'; }
 function isIssueItem(item: ActionItem) { return !isPullRequestItem(item) && (item.url.includes('/issues/') || item.kind === 'assigned' || item.kind === 'maintenance' || item.source === 'issues'); }
 function isAuthoredPrItem(item: ActionItem) { return item.kind.startsWith('authored_pr') || item.evidence?.isAuthored === true; }
 function isOwnRepoItem(item: ActionItem, ownerLogin: string) { const repoOwner = item.repo.split('/')[0]?.toLowerCase(); return item.evidence?.isOwnRepo === true || (!!ownerLogin && repoOwner === ownerLogin.toLowerCase()); }
-function itemTypeLabel(item: ActionItem) { if (isPullRequestItem(item)) return 'Pull request'; if (isIssueItem(item)) return 'Issue'; return item.kind.replaceAll('_', ' '); }
-function itemRelationshipLabel(item: ActionItem, ownerLogin = '') { if (isAuthoredPrItem(item)) return isOwnRepoItem(item, ownerLogin) ? 'My PR · own repo' : 'My PR · other repo'; if (item.kind === 'repo_pr') return 'Other person’s PR · my repo'; if (item.kind === 'review_requested') return 'Review requested'; if (item.kind === 'maintenance') return 'Created by me'; return item.source; }
+function itemTypeLabel(item: ActionItem) { if (isPullRequestItem(item)) return 'Pull request'; if (isIssueItem(item)) return 'Issue'; if (item.kind.includes('discussion')) return 'Discussion'; return item.kind.replaceAll('_', ' '); }
+function itemRelationshipLabel(item: ActionItem, ownerLogin = '') { if (isAuthoredPrItem(item) && isPullRequestItem(item)) return isOwnRepoItem(item, ownerLogin) ? 'My PR · own repo' : 'My PR · other repo'; if (item.kind === 'repo_pr') return 'Other person’s PR · my repo'; if (item.kind === 'review_requested') return 'Review requested'; if (item.kind === 'maintenance') return 'Created by me'; return item.source; }
+function itemIcon(item: ActionItem) { if (isPullRequestItem(item)) return '⑂'; if (isIssueItem(item)) return '○'; if (item.kind.includes('discussion')) return '◌'; if (item.kind === 'workflow_failure') return '×'; return '•'; }
+export function capitalize(value: string) { return value ? value.slice(0, 1).toUpperCase() + value.slice(1) : value; }

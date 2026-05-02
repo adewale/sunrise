@@ -36,6 +36,18 @@ Future changes to `adewale/sunrise` do not automatically update your fork. To up
 
 More screenshots are in [`docs/assets/screenshots`](docs/assets/screenshots).
 
+To refresh the committed screenshots:
+
+```bash
+# Public pages only:
+npm run screenshots:capture
+
+# Include authenticated dashboard screenshots:
+SUNRISE_SESSION=<sunrise_session_cookie_value> npm run screenshots:capture
+```
+
+Override targets with `SUNRISE_LANDING_URL`, `SUNRISE_APP_URL`, or `SUNRISE_SCREENSHOT_DIR`.
+
 ## Deploy
 
 1. Click **Deploy to Cloudflare** above. Cloudflare forks the repo and provisions D1 + Queues from `wrangler.jsonc`.

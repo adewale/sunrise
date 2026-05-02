@@ -5,6 +5,8 @@ type ProcessGitHubChangeMessage = Extract<QueueMessage, { kind: 'process-github-
 import { classifyChange } from './classifier';
 import { retryD1 } from './db';
 
+let lastSuccessfulSnapshotEndpoints = new Set<string>();
+
 export async function runDiscovery(env: Env, trigger: 'cron' | 'manual' = 'manual', accessToken?: string) {
   const runId = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -14,7 +16,7 @@ export async function runDiscovery(env: Env, trigger: 'cron' | 'manual' = 'manua
     const messages: ProcessGitHubChangeMessage[] = [];
     for (const change of changes) messages.push(await persistChange(env, change));
     await enqueueChanges(env, messages);
-    await reconcileResolvedActionItems(env, changes);
+    await reconcileResolvedActionItems(env, changes, lastSuccessfulSnapshotEndpoints);
     await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', new Date().toISOString(), changes.length, runId).run());
     return { runId, candidateCount: changes.length };
   } catch (error) {
@@ -86,30 +88,44 @@ async function incrementProcessedCount(env: Env, runId: string) {
   await retryD1(() => env.DB.prepare('UPDATE scan_runs SET processed_count = processed_count + 1 WHERE id = ?').bind(runId).run());
 }
 
-async function reconcileResolvedActionItems(env: Env, changes: GitHubChange[]) {
-  const liveInvitationKeys = new Set(changes.filter((change) => change.sourceEndpoint.includes('invitations')).map((change) => change.canonicalSubjectKey));
-  const existingInvitations = await env.DB.prepare("SELECT * FROM action_items WHERE kind = 'invitation'").all<Record<string, any>>();
-  for (const row of existingInvitations.results.filter((item) => item.kind === 'invitation')) {
-    if (liveInvitationKeys.has(row.canonical_subject_key)) continue;
-    await retryD1(() => env.DB.prepare('DELETE FROM action_items WHERE canonical_subject_key = ?').bind(row.canonical_subject_key).run());
-    await retryD1(() => env.DB.prepare('DELETE FROM item_evidence WHERE action_item_id = ?').bind(row.id).run());
+async function reconcileResolvedActionItems(env: Env, changes: GitHubChange[], successfulSnapshots: Set<string>) {
+  const rules = [
+    { endpoints: ['invitations/repository', 'invitations/org'], kinds: ['invitation'] },
+    { endpoints: ['search/review-requests'], kinds: ['review_requested'] },
+    { endpoints: ['search/assigned'], kinds: ['assigned'] },
+    { endpoints: ['search/authored-prs'], kinds: ['authored_pr_failing', 'authored_pr_changes_requested', 'authored_pr_conflict', 'authored_pr_pending', 'stale_green_pr'] },
+    { endpoints: ['search/created-issues'], kinds: ['maintenance'] },
+    { endpoints: ['search/owned-repo-prs'], kinds: ['repo_pr'] },
+    { endpoints: ['actions/workflow-failure'], kinds: ['workflow_failure'] },
+    { endpoints: ['security/dependabot', 'security/code-scanning', 'security/secret-scanning'], kinds: ['security_alert'] },
+  ];
+  for (const rule of rules) {
+    if (!rule.endpoints.some((endpoint) => successfulSnapshots.has(endpoint))) continue;
+    const liveKeys = new Set(changes.filter((change) => rule.endpoints.includes(change.sourceEndpoint)).map((change) => change.canonicalSubjectKey));
+    const existing = await env.DB.prepare(`SELECT * FROM action_items WHERE kind IN (${rule.kinds.map(() => '?').join(',')})`).bind(...rule.kinds).all<Record<string, any>>();
+    for (const row of existing.results) {
+      if (liveKeys.has(row.canonical_subject_key)) continue;
+      await retryD1(() => env.DB.prepare('DELETE FROM action_items WHERE canonical_subject_key = ?').bind(row.canonical_subject_key).run());
+      await retryD1(() => env.DB.prepare('DELETE FROM item_evidence WHERE action_item_id = ?').bind(row.id).run());
+    }
   }
 }
 
 async function discoverFromGitHub(runId: string, token: string, ownerLogin: string, env: Env): Promise<GitHubChange[]> {
+  lastSuccessfulSnapshotEndpoints = new Set<string>();
   const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'sunrise-dashboard' };
   const [notifications, reviewRequests, assigned, authoredPrs, authoredIssues, ownedRepoPrs, involved, discussions, repoInvitations, orgMemberships, activeRepos] = await Promise.all([
-    fetchPaginated<any>('https://api.github.com/notifications?all=false&per_page=100', headers, 'GitHub notifications'),
-    searchIssues(headers, 'search/review-requests', `is:pr is:open review-requested:${ownerLogin} archived:false`),
-    searchIssues(headers, 'search/assigned', `is:open assignee:${ownerLogin} archived:false`),
-    searchIssues(headers, 'search/authored-prs', `is:pr is:open author:${ownerLogin} archived:false`),
-    searchIssues(headers, 'search/created-issues', `is:issue is:open author:${ownerLogin} archived:false`),
-    searchIssues(headers, 'search/owned-repo-prs', `is:pr is:open user:${ownerLogin} -author:${ownerLogin} archived:false`),
-    searchIssues(headers, 'search/involved', `is:open involves:${ownerLogin} archived:false`),
-    safeSearchIssues(headers, 'search/discussions', `is:discussion mentions:${ownerLogin} archived:false`),
-    safeFetchPaginated<any>('https://api.github.com/user/repository_invitations?per_page=100', headers, 'repository invitations'),
-    safeFetchPaginated<any>('https://api.github.com/user/memberships/orgs?state=pending&per_page=100', headers, 'organization memberships'),
-    safeFetchPaginated<any>('https://api.github.com/user/repos?affiliation=owner&sort=pushed&direction=desc&per_page=30', headers, 'owned repositories'),
+    snapshotFetch<any>('https://api.github.com/notifications?all=false&per_page=100', headers, 'GitHub notifications', 'notifications'),
+    snapshotSearch(headers, 'search/review-requests', `is:pr is:open review-requested:${ownerLogin} archived:false`),
+    snapshotSearch(headers, 'search/assigned', `is:open assignee:${ownerLogin} archived:false`),
+    snapshotSearch(headers, 'search/authored-prs', `is:pr is:open author:${ownerLogin} archived:false`),
+    snapshotSearch(headers, 'search/created-issues', `is:issue is:open author:${ownerLogin} archived:false`),
+    snapshotSearch(headers, 'search/owned-repo-prs', `is:pr is:open user:${ownerLogin} -author:${ownerLogin} archived:false`),
+    snapshotSearch(headers, 'search/involved', `is:open involves:${ownerLogin} archived:false`),
+    safeSnapshotSearch(headers, 'search/discussions', `is:discussion mentions:${ownerLogin} archived:false`),
+    safeSnapshotFetch<any>('https://api.github.com/user/repository_invitations?per_page=100', headers, 'repository invitations', 'invitations/repository'),
+    safeSnapshotFetch<any>('https://api.github.com/user/memberships/orgs?state=pending&per_page=100', headers, 'organization memberships', 'invitations/org'),
+    safeSnapshotFetch<any>('https://api.github.com/user/repos?affiliation=owner&sort=pushed&direction=desc&per_page=30', headers, 'owned repositories', 'user/repos'),
   ]);
   const enrichedAuthoredPrs = await enrichPullRequests(headers, authoredPrs.slice(0, 20), ownerLogin);
   const repoAlerts = await discoverRepoAlerts(runId, headers, activeRepos.slice(0, 10), ownerLogin);
@@ -146,8 +162,24 @@ async function searchIssues(headers: Record<string, string>, endpoint: string, q
   return fetchPaginated<any>(`https://api.github.com/search/issues?q=${encodeURIComponent(query)}&sort=updated&order=desc&per_page=100`, headers, endpoint);
 }
 
-async function safeSearchIssues(headers: Record<string, string>, endpoint: string, query: string) {
-  try { return await searchIssues(headers, endpoint, query); } catch { return []; }
+async function snapshotSearch(headers: Record<string, string>, endpoint: string, query: string) {
+  const items = await searchIssues(headers, endpoint, query);
+  lastSuccessfulSnapshotEndpoints.add(endpoint);
+  return items;
+}
+
+async function safeSnapshotSearch(headers: Record<string, string>, endpoint: string, query: string) {
+  try { return await snapshotSearch(headers, endpoint, query); } catch { return []; }
+}
+
+async function snapshotFetch<T>(firstUrl: string, headers: Record<string, string>, label: string, endpoint: string, maxPages = 2): Promise<T[]> {
+  const items = await fetchPaginated<T>(firstUrl, headers, label, maxPages);
+  lastSuccessfulSnapshotEndpoints.add(endpoint);
+  return items;
+}
+
+async function safeSnapshotFetch<T>(firstUrl: string, headers: Record<string, string>, label: string, endpoint: string, maxPages = 2): Promise<T[]> {
+  try { return await snapshotFetch<T>(firstUrl, headers, label, endpoint, maxPages); } catch { return []; }
 }
 
 async function safeFetchPaginated<T>(firstUrl: string, headers: Record<string, string>, label: string, maxPages = 2): Promise<T[]> {
@@ -175,10 +207,10 @@ async function discoverRepoAlerts(runId: string, headers: Record<string, string>
     const fullName = String(repo.full_name ?? '');
     if (!fullName || String(repo.owner?.login ?? '').toLowerCase() !== ownerLogin.toLowerCase()) continue;
     const [runs, dependabot, codeScanning, secretScanning] = await Promise.all([
-      safeFetchPaginated<any>(`https://api.github.com/repos/${fullName}/actions/runs?status=failure&per_page=5`, headers, 'workflow runs', 1),
-      safeFetchPaginated<any>(`https://api.github.com/repos/${fullName}/dependabot/alerts?state=open&per_page=5`, headers, 'dependabot alerts', 1),
-      safeFetchPaginated<any>(`https://api.github.com/repos/${fullName}/code-scanning/alerts?state=open&per_page=5`, headers, 'code scanning alerts', 1),
-      safeFetchPaginated<any>(`https://api.github.com/repos/${fullName}/secret-scanning/alerts?state=open&per_page=5`, headers, 'secret scanning alerts', 1),
+      safeSnapshotFetch<any>(`https://api.github.com/repos/${fullName}/actions/runs?status=failure&per_page=5`, headers, 'workflow runs', 'actions/workflow-failure', 1),
+      safeSnapshotFetch<any>(`https://api.github.com/repos/${fullName}/dependabot/alerts?state=open&per_page=5`, headers, 'dependabot alerts', 'security/dependabot', 1),
+      safeSnapshotFetch<any>(`https://api.github.com/repos/${fullName}/code-scanning/alerts?state=open&per_page=5`, headers, 'code scanning alerts', 'security/code-scanning', 1),
+      safeSnapshotFetch<any>(`https://api.github.com/repos/${fullName}/secret-scanning/alerts?state=open&per_page=5`, headers, 'secret scanning alerts', 'security/secret-scanning', 1),
     ]);
     out.push(...runs.map((run) => repoAlertChange(runId, fullName, 'actions/workflow-failure', `Failed workflow run: ${run.name ?? run.display_title ?? fullName}`, run.html_url, run.updated_at ?? run.created_at, { reason: 'ci_activity', checks: 'failure' })));
     out.push(...dependabot.map((alert) => repoAlertChange(runId, fullName, 'security/dependabot', `Dependabot alert: ${alert.security_advisory?.summary ?? alert.dependency?.package?.name ?? fullName}`, alert.html_url, alert.updated_at ?? alert.created_at, { reason: 'security_alert' })));

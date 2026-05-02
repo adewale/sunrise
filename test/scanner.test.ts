@@ -59,7 +59,7 @@ describe('GitHub discovery', () => {
     expect(run.processed_count).toBe(8);
   });
 
-  it('removes invitation action items after GitHub no longer returns the invitation', async () => {
+  it('removes snapshot-backed action items after GitHub no longer returns them', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/notifications')) return Response.json([]);
@@ -69,13 +69,26 @@ describe('GitHub discovery', () => {
       return Response.json([]);
     }));
     const db = createMemoryDb();
+    const stale = [
+      ['old-invite', 'github:invitations/repository:ade/new', 'invitation', 'Repository invitation: ade/new', 'https://github.com/ade/new'],
+      ['old-review', 'github:o/r/pull/1', 'review_requested', 'Review me', 'https://github.com/o/r/pull/1'],
+      ['old-assigned', 'github:o/r/issues/2', 'assigned', 'Assigned issue', 'https://github.com/o/r/issues/2'],
+      ['old-authored', 'github:o/r/pull/3', 'authored_pr_pending', 'Authored PR', 'https://github.com/o/r/pull/3'],
+      ['old-created', 'github:o/r/issues/4', 'maintenance', 'Created issue', 'https://github.com/o/r/issues/4'],
+      ['old-repo-pr', 'github:ade/r/pull/5', 'repo_pr', 'Repo PR', 'https://github.com/ade/r/pull/5'],
+    ];
+    for (const [id, key, kind, title, url] of stale) {
+      await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+        .bind(id, key, kind, title, 'ade/r', url, '2026-05-01T00:00:00Z', 'stale', 'act', '{}', 'search').run();
+    }
     await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
-      .bind('old-invite', 'github:invitations/repository:ade/new', 'invitation', 'Repository invitation: ade/new', 'ade/new', 'https://github.com/ade/new', '2026-05-01T00:00:00Z', 'A repository invitation is pending.', 'Accept or decline invitation', '{}', 'search').run();
+      .bind('keep-mention', 'github:o/r/issues/9', 'mention', 'Mention', 'o/r', 'https://github.com/o/r/issues/9', '2026-05-01T00:00:00Z', 'mention', 'reply', '{}', 'notifications').run();
 
     await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
 
     const items = await db.prepare('SELECT * FROM action_items').all<Record<string, any>>();
-    expect(items.results.some((row) => row.kind === 'invitation')).toBe(false);
+    expect(items.results.map((row) => row.kind)).not.toEqual(expect.arrayContaining(['invitation', 'review_requested', 'assigned', 'authored_pr_pending', 'maintenance', 'repo_pr']));
+    expect(items.results.some((row) => row.kind === 'mention')).toBe(true);
   });
 
   it('uses sendBatch when a queue binding is available', async () => {

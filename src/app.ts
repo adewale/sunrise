@@ -106,7 +106,8 @@ app.get('/dashboard', async (c) => {
   const session = await requireSession(c);
   if (session instanceof Response) return session;
   const props: any = await dashboardProps(c.env, session.githubLogin, Number(c.req.query('page') ?? '1'));
-  if (c.req.query('refresh') === 'started') props.notice = { kind: 'success', message: `Manual refresh started. Found ${c.req.query('candidates') ?? '0'} GitHub events; the inbox will fill in as processing finishes.` };
+  if (c.req.query('refresh') === 'started') props.notice = { kind: 'success', message: `Manual refresh started. Found ${c.req.query('candidates') ?? '0'} GitHub events; the inbox will fill in as processing finishes. View details on the runs page.` };
+  if (c.req.query('refresh') === 'failed') props.notice = { kind: 'fail', message: `Manual refresh failed${c.req.query('error') ? `: ${c.req.query('error')}` : '.'}` };
   if (c.req.query('json') !== undefined || c.req.header('Accept')?.includes('application/json')) return c.json(props);
   return c.render('Dashboard', props);
 });
@@ -130,11 +131,12 @@ app.post('/settings', async (c) => {
 app.post('/refresh', async (c) => {
   const session = await requireSession(c);
   if (session instanceof Response) return session;
+  const backTo = safeReturnPath(c.req.header('Referer'), new URL(c.req.url).origin);
   try {
     const run = await runDiscovery(c.env, 'manual', session.accessToken);
-    return c.redirect(`/runs?refresh=started&runId=${encodeURIComponent(run.runId)}&candidates=${run.candidateCount}`);
+    return c.redirect(withRefreshParams(backTo, { refresh: 'started', runId: run.runId, candidates: String(run.candidateCount) }));
   } catch (error) {
-    return c.redirect(`/runs?refresh=failed&error=${encodeURIComponent(error instanceof Error ? error.message : String(error))}`);
+    return c.redirect(withRefreshParams(backTo, { refresh: 'failed', error: error instanceof Error ? error.message : String(error) }));
   }
 });
 
@@ -321,6 +323,23 @@ function invitationLink(item: GitHubActionItem) {
 async function requireSession(c: any) {
   const session = await getSession(c.env.DB, c.req.header('Cookie') ?? null);
   return session ?? c.redirect('/login');
+}
+
+function safeReturnPath(referer: string | undefined, origin: string) {
+  if (!referer) return '/dashboard';
+  try {
+    const url = new URL(referer);
+    if (url.origin !== origin) return '/dashboard';
+    return `${url.pathname}${url.search}` || '/dashboard';
+  } catch {
+    return '/dashboard';
+  }
+}
+
+function withRefreshParams(path: string, params: Record<string, string>) {
+  const url = new URL(path, 'https://sunrise.local');
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+  return `${url.pathname}${url.search}`;
 }
 
 function setupMissing(env: Env) {

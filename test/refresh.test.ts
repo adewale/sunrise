@@ -10,14 +10,15 @@ async function signedInDb() {
 }
 
 describe('manual refresh lifecycle', () => {
-  it('redirects to runs so the owner can see progress immediately', async () => {
+  it('redirects back to the current page instead of hijacking the owner to runs', async () => {
     const db = await signedInDb();
-    const res = await app.request('/refresh', { method: 'POST', headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade', TEST_GITHUB_FIXTURES: 'true' } as unknown as Env);
+    const res = await app.request('/refresh', { method: 'POST', headers: { Cookie: 'sunrise_session=sid', Referer: 'http://localhost/dashboard?page=2' } }, { DB: db, OWNER_LOGIN: 'ade', TEST_GITHUB_FIXTURES: 'true' } as unknown as Env);
     expect(res.status).toBe(302);
     const location = res.headers.get('location')!;
-    expect(location).toContain('/runs?refresh=started');
+    expect(location).toContain('/dashboard?page=2&refresh=started');
     expect(location).toContain('runId=');
     expect(location).toContain('candidates=2');
+    expect(location).not.toContain('/runs');
   });
 
   it('renders running, completed, empty, and failed refresh notices', async () => {
@@ -44,10 +45,10 @@ describe('manual refresh lifecycle', () => {
     expect(html).toContain('Manual refresh failed: GitHub 500');
   });
 
-  it('redirects to a failed runs notice when discovery throws', async () => {
+  it('redirects failed refreshes back to the current page', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('boom', { status: 500 })));
     const db = await signedInDb();
-    const res = await app.request('/refresh', { method: 'POST', headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
-    expect(res.headers.get('location')).toContain('/runs?refresh=failed');
+    const res = await app.request('/refresh', { method: 'POST', headers: { Cookie: 'sunrise_session=sid', Referer: 'http://localhost/dashboard' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
+    expect(res.headers.get('location')).toContain('/dashboard?refresh=failed');
   });
 });

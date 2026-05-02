@@ -4,7 +4,7 @@ import type { Env } from '../src/env';
 import { createMemoryDb } from './memory-db';
 
 describe('Sunrise app routes', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
   const queue = { send: vi.fn(async () => undefined) } as unknown as Queue;
   it('renders public landing with deploy CTA, setup checklist, and branded favicon', async () => {
     const env = { DB: createMemoryDb(), GITHUB_CLIENT_ID: '', OWNER_LOGIN: 'ade', SESSION_SECRET: 'x' } as unknown as Env;
@@ -120,6 +120,21 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('Manual refresh');
     expect(html).not.toContain('Ignore</button>');
     expect(html).not.toContain('Recent signal');
+  });
+
+  it('uses UTC calendar days for updated today/yesterday labels', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-01T23:30:00Z'));
+    const db = createMemoryDb();
+    await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
+    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+      .bind('today', 'today', 'review_requested', 'Updated just after midnight UTC', 'o/r', 'https://github.com/o/r/pull/1', '2026-05-01T00:05:00Z', 'Review requested', 'Review PR', '{}', 'notifications').run();
+    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+      .bind('yesterday', 'yesterday', 'maintenance', 'Updated just before midnight UTC', 'o/r', 'https://github.com/o/r/issues/2', '2026-04-30T23:59:00Z', 'Issue activity', 'Respond', '{}', 'issues').run();
+
+    const html = await (await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env)).text();
+    expect(html).toMatch(/updated\s*(?:<!-- -->)?\s*today/);
+    expect(html).toMatch(/updated\s*(?:<!-- -->)?\s*yesterday/);
   });
 
   it('serves dashboard through the Inertia protocol without changing the HTML view', async () => {

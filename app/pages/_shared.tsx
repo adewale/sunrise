@@ -65,7 +65,10 @@ export function formatDateTime(value: string | null) {
 function relativeTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  const days = Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000));
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const itemDay = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const days = Math.max(0, Math.floor((today - itemDay) / 86400000));
   if (days === 0) return 'today';
   if (days === 1) return 'yesterday';
   return `${days}d ago`;

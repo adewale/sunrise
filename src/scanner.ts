@@ -13,16 +13,53 @@ export async function runDiscovery(env: Env, trigger: 'cron' | 'manual' = 'manua
   await retryD1(() => env.DB.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, 0, 0)').bind(runId, trigger, 'running', now).run());
   try {
     const changes = env.TEST_GITHUB_FIXTURES === 'true' || !accessToken ? fixtureChanges(runId, env.OWNER_LOGIN ?? 'owner') : await discoverFromGitHub(runId, accessToken, env.OWNER_LOGIN ?? '', env);
+    if (await snapshotUnchanged(env, changes)) {
+      await writeRefreshSummary(env, { status: 'no_change', candidateCount: 0, resolvedCount: 0 });
+      await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('no_change', new Date().toISOString(), 0, runId).run());
+      return { runId, candidateCount: 0, noChange: true };
+    }
+    const beforeKeys = await currentActionItemKeys(env);
     const messages: ProcessGitHubChangeMessage[] = [];
     for (const change of changes) messages.push(await persistChange(env, change));
     await enqueueChanges(env, messages);
     await reconcileResolvedActionItems(env, changes, lastSuccessfulSnapshotEndpoints);
+    const afterKeys = await currentActionItemKeys(env);
+    await writeSnapshotSignature(env, changes);
+    await writeRefreshSummary(env, { status: 'changed', candidateCount: changes.length, resolvedCount: [...beforeKeys].filter((key) => !afterKeys.has(key)).length });
     await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', new Date().toISOString(), changes.length, runId).run());
-    return { runId, candidateCount: changes.length };
+    return { runId, candidateCount: changes.length, noChange: false };
   } catch (error) {
     await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, error = ? WHERE id = ?').bind('failed', new Date().toISOString(), error instanceof Error ? error.message : String(error), runId).run());
     throw error;
   }
+}
+
+async function snapshotUnchanged(env: Env, changes: GitHubChange[]) {
+  const signature = snapshotSignature(changes);
+  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'github_snapshot_signature'").first<Record<string, string>>();
+  return Boolean(row?.value) && row?.value === signature;
+}
+
+async function writeSnapshotSignature(env: Env, changes: GitHubChange[]) {
+  await writeSetting(env, 'github_snapshot_signature', snapshotSignature(changes));
+}
+
+async function writeRefreshSummary(env: Env, summary: { status: string; candidateCount: number; resolvedCount: number }) {
+  await writeSetting(env, 'last_refresh_summary', JSON.stringify({ ...summary, updatedAt: new Date().toISOString() }));
+}
+
+async function writeSetting(env: Env, key: string, value: string) {
+  await retryD1(() => env.DB.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).bind(key, value, new Date().toISOString()).run());
+}
+
+function snapshotSignature(changes: GitHubChange[]) {
+  return changes.map((change) => `${change.sourceEndpoint}|${change.canonicalSubjectKey}|${change.updatedAt}`).sort().join('\n');
+}
+
+async function currentActionItemKeys(env: Env) {
+  const rows = await env.DB.prepare('SELECT * FROM action_items WHERE ignored_at IS NULL').all<Record<string, any>>();
+  return new Set(rows.results.map((row) => row.canonical_subject_key));
 }
 
 async function persistChange(env: Env, change: GitHubChange): Promise<ProcessGitHubChangeMessage> {

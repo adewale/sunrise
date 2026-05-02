@@ -91,6 +91,22 @@ describe('GitHub discovery', () => {
     expect(items.results.some((row) => row.kind === 'mention')).toBe(true);
   });
 
+  it('skips processing when the GitHub snapshot has not changed', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/notifications')) return Response.json([notification('mention', 'Mentioned thread', 'https://api.github.com/repos/o/r/issues/1', '2026-05-01T10:00:00Z')]);
+      if (u.includes('/search/issues')) return search([]);
+      return Response.json([]);
+    }));
+    const db = createMemoryDb();
+    const first = await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
+    const second = await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token') as any;
+    expect(first.candidateCount).toBe(1);
+    expect(second).toMatchObject({ candidateCount: 0, noChange: true });
+    const runs = await db.prepare('SELECT * FROM scan_runs').all<Record<string, any>>();
+    expect(runs.results.some((run) => run.status === 'no_change')).toBe(true);
+  });
+
   it('uses sendBatch when a queue binding is available', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);

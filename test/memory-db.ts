@@ -44,7 +44,11 @@ function execute(store: Record<string, Row[]>, sql: string, v: any[]) {
 
 function select(store: Record<string, Row[]>, sql: string, v: any[]) {
   const normalized = sql.replace(/\s+/g, ' ').trim();
-  if (/FROM settings/i.test(normalized)) return store.settings.filter((r) => normalized.includes("oauth_last_error") ? r.key === 'oauth_last_error' : normalized.includes("inbox_page_size") ? r.key === 'inbox_page_size' : (!v[0] || r.key === v[0]));
+  if (/FROM settings/i.test(normalized)) {
+    const literalKey = /key = '([^']+)'/i.exec(normalized)?.[1];
+    const key = v[0] ?? literalKey;
+    return store.settings.filter((r) => !key || r.key === key);
+  }
   if (/FROM sessions/i.test(normalized)) return store.sessions.filter((r) => !v[0] || r.id === v[0]);
   if (/FROM oauth_states/i.test(normalized)) return v.length ? store.oauth_states.filter((r) => r.state === v[0]) : store.oauth_states;
   if (/COUNT\(\*\) AS count FROM github_changes/i.test(normalized)) {

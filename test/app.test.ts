@@ -54,6 +54,8 @@ describe('Sunrise app routes', () => {
     await db.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, 0, 0)')
       .bind('run1', 'manual', 'succeeded', '2026-04-30T00:00:00Z', 0, 0).run();
     await db.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', '2026-04-30T00:00:00Z', 3, 'run1').run();
+    await db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+      .bind('last_refresh_summary', JSON.stringify({ status: 'changed', candidateCount: 5, resolvedCount: 1, updatedAt: '2026-04-30T00:00:00Z' }), '2026-04-30T00:00:00Z').run();
     await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
       .bind('i1', 'k1', 'review_requested', 'Review the launch PR', 'o/r', 'https://github.com/o/r/pull/1', '2026-04-30T00:00:00Z', 'You were requested for review.', 'Review PR', '{}', 'notifications').run();
     await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
@@ -120,6 +122,8 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('.sun-icon{left:10px');
     expect(html).toContain('.moon-icon{right:10px');
     expect(html).toContain('Manual refresh');
+    expect(html).toContain('Collected GitHub');
+    expect(html).toContain('found ·');
     expect(html).not.toContain('Ignore</button>');
     expect(html).not.toContain('Recent signal');
   });

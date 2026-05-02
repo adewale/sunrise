@@ -10,7 +10,7 @@
     "producers": [{ "binding": "GITHUB_QUEUE", "queue": "sunrise-github" }],
     "consumers": [{ "queue": "sunrise-github", "max_batch_size": 10, "max_batch_timeout": 30, "max_retries": 3, "dead_letter_queue": "sunrise-github-dlq" }]
   },
-  "triggers": { "crons": ["0 12 * * *"] },
+  "triggers": { "crons": ["0 7 * * *", "0 13 * * *", "0 19 * * *"] },
   "vars": {
     "GITHUB_REPO_URL": "https://github.com/adewale/sunrise"
   }

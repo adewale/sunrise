@@ -298,6 +298,7 @@ function unresolvedGitHubLinks(items: GitHubActionItem[], login: string) {
     unresolvedRow('open-prs-owned', 'Open PRs in my repos', items.filter((i) => isPullRequestItem(i) && isOwnRepoItem(i, login)).length, '/pulls', `is:pr is:open user:${login} archived:false`),
     unresolvedRow('review-requests', 'Review requests', items.filter((i) => i.kind === 'review_requested').length, '/pulls/review-requested'),
     unresolvedRow('my-open-prs', 'My open PRs', items.filter(isAuthoredPrItem).length, '/pulls', `is:pr is:open author:${login} archived:false`),
+    unresolvedRow('my-open-issues', 'My open issues', items.filter((i) => isIssueItem(i) && (i.kind === 'maintenance' || i.evidence?.isAuthored === true)).length, '/issues', `is:issue is:open author:${login} archived:false`),
     unresolvedRow('assigned', 'Assigned to me', items.filter((i) => i.kind === 'assigned').length, '/issues/assigned'),
     unresolvedRow('mentions', 'Mentions', items.filter((i) => i.kind === 'mention').length, '/issues/mentioned'),
     unresolvedRow('failed-workflows', 'Failed workflows', items.filter((i) => i.kind === 'workflow_failure').length, '/actions'),

@@ -59,6 +59,8 @@ describe('Sunrise app routes', () => {
       .bind('i3', 'k3', 'repo_pr', 'External PR to my repo', 'ade/r', 'https://github.com/ade/r/pull/8', '2026-04-28T00:00:00Z', 'An open PR targets one of your repositories.', 'Review or triage this PR', '{"isOwnRepo":true,"isAuthored":false}', 'search').run();
     await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
       .bind('i4', 'k4', 'invitation', 'Repository invitation', 'ade/new', 'https://github.com/ade/new', '2026-04-27T00:00:00Z', 'A repository invitation is pending.', 'Accept or decline invitation', '{}', 'search').run();
+    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+      .bind('i5', 'k5', 'maintenance', 'My open issue', 'ade/r', 'https://github.com/ade/r/issues/9', '2026-04-26T00:00:00Z', 'A thread you opened has activity or needs closure.', 'Respond, close, or archive this loop', '{"isAuthored":true}', 'issues').run();
     const res = await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
     const html = await res.text();
     expect(html).toContain('class="dashboard-layout"');
@@ -85,11 +87,13 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('Open PRs in my repos');
     expect(html).toContain('q=is%3Apr+is%3Aopen+user%3Aade+archived%3Afalse');
     expect(html).toContain('My open PRs');
+    expect(html).toContain('My open issues');
+    expect(html).toContain('q=is%3Aissue+is%3Aopen+author%3Aade+archived%3Afalse');
     expect(html).toContain('href="https://github.com/settings/repositories" target="_blank" rel="noreferrer"');
     expect(html).not.toContain('href="https://github.com/notifications" target="_blank" rel="noreferrer"');
     expect(html).toContain('↗');
     expect(html).toContain('<span>PRs</span><strong>3</strong>');
-    expect(html).toContain('<span>Issues</span><strong>0</strong>');
+    expect(html).toContain('<span>Issues</span><strong>1</strong>');
     expect(html).toContain('<span>My PRs · elsewhere</span><strong>1</strong>');
     expect(html).toContain('<span>PRs to my repos</span><strong>1</strong>');
     expect(html).toContain('@media(max-width:760px){main{width:min(100% - 20px,1120px);margin-top:12px');

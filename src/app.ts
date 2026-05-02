@@ -301,7 +301,7 @@ function unresolvedGitHubLinks(items: GitHubActionItem[], login: string) {
     unresolvedRow('assigned', 'Assigned to me', items.filter((i) => i.kind === 'assigned').length, '/issues/assigned'),
     unresolvedRow('mentions', 'Mentions', items.filter((i) => i.kind === 'mention').length, '/issues/mentioned'),
     unresolvedRow('failed-workflows', 'Failed workflows', items.filter((i) => i.kind === 'workflow_failure').length, '/actions'),
-    unresolvedRow('invitations', 'Invitations', items.filter((i) => i.kind === 'invitation').length, '/notifications'),
+    unresolvedRow('invitations', 'Invitations', items.filter((i) => i.kind === 'invitation').length, '/settings/repositories'),
   ];
   return rows.filter((row) => row.count > 0);
 }

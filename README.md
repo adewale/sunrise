@@ -6,6 +6,26 @@ A self-hosted morning dashboard for the GitHub work that needs your attention.
 
 Public homepage → GitHub repo → Deploy your own version → own your data.
 
+## Project map
+
+```txt
+adewale/sunrise
+  canonical source, deploy-button template, public project
+
+adewale/sunrise-deploy
+  maintainer's personal fork/instance only
+
+sunrise.adewale-883.workers.dev
+  public landing website
+
+sunrise-deploy.adewale-883.workers.dev
+  maintainer's personal app instance
+```
+
+The **Deploy to Cloudflare** button uses `adewale/sunrise` as the template. Cloudflare creates **your own GitHub fork** and deploys a Worker from that fork into your Cloudflare account. Your fork owns its Cloudflare resource names, D1 database ID, queues, secrets, OAuth settings, and future deploys.
+
+Future changes to `adewale/sunrise` do not automatically update your fork. To update, sync or merge from the upstream Sunrise repo, run verification, apply any D1 migrations, and deploy your Worker again.
+
 ## Screenshots
 
 ![Sunrise inbox](docs/assets/screenshots/dashboard.png)
@@ -52,3 +72,32 @@ wrangler deploy
 ```
 
 See [docs/deploy.md](docs/deploy.md).
+
+## Updating a deployed fork
+
+If you deployed with the button, your app runs from your own fork. A coding agent can update it with this flow:
+
+```bash
+git remote -v
+# Add once if missing:
+git remote add upstream https://github.com/adewale/sunrise.git
+git fetch upstream --tags
+git checkout -b update-sunrise-vX.Y.Z
+git merge vX.Y.Z
+npm install
+npm run verify
+npx wrangler d1 migrations apply DB --remote
+npx wrangler deploy
+```
+
+When resolving conflicts, preserve your fork's deployment-specific Cloudflare config: Worker name, D1 database ID, queue names, secrets, and OAuth settings.
+
+## Maintainer releases
+
+Maintainers can publish a tagged GitHub release with generated notes and coding-agent update instructions:
+
+```bash
+npm run release -- vX.Y.Z "Sunrise vX.Y.Z"
+```
+
+The script creates an annotated tag, pushes it, and creates a GitHub release using `gh`. Release notes include a changelog and a copy/paste section for a user's coding agent to update that user's fork and Cloudflare instance.

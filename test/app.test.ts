@@ -80,6 +80,8 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('time-section');
     expect(html).toContain('type-icon');
     expect(html).toContain('repo-avatar');
+    expect(html).toContain('item-signals');
+    expect(html).toContain('.item-topline{display:grid;grid-template-columns:auto minmax(0,1fr)');
     expect(html).toContain('updated ');
     expect(html).toContain('Open in GitHub');
     expect(html).toContain('My PR · other repo');

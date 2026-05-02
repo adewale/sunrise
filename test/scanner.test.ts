@@ -59,6 +59,25 @@ describe('GitHub discovery', () => {
     expect(run.processed_count).toBe(8);
   });
 
+  it('removes invitation action items after GitHub no longer returns the invitation', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/notifications')) return Response.json([]);
+      if (u.includes('/search/issues')) return search([]);
+      if (u.includes('/user/repository_invitations')) return Response.json([]);
+      if (u.includes('/user/memberships/orgs')) return Response.json([]);
+      return Response.json([]);
+    }));
+    const db = createMemoryDb();
+    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+      .bind('old-invite', 'github:invitations/repository:ade/new', 'invitation', 'Repository invitation: ade/new', 'ade/new', 'https://github.com/ade/new', '2026-05-01T00:00:00Z', 'A repository invitation is pending.', 'Accept or decline invitation', '{}', 'search').run();
+
+    await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
+
+    const items = await db.prepare('SELECT * FROM action_items').all<Record<string, any>>();
+    expect(items.results.some((row) => row.kind === 'invitation')).toBe(false);
+  });
+
   it('uses sendBatch when a queue binding is available', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);

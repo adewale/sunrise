@@ -34,8 +34,10 @@ function execute(store: Record<string, Row[]>, sql: string, v: any[]) {
   else if (/^INSERT INTO github_changes/i.test(normalized)) upsert(store.github_changes, 'id', row(['id','run_id','canonical_subject_key','source_endpoint','repo','subject_type','subject_url','html_url','updated_at','raw_json','first_seen_at','last_seen_at'], v, { processing_status: 'pending', attempt_count: 0 }));
   else if (/^UPDATE github_changes/i.test(normalized)) { const r = byId(store.github_changes, v.at(-1)); if (r) { if (normalized.includes("'ignored'")) r.processing_status = 'ignored'; else if (normalized.includes("'processed'")) r.processing_status = 'processed'; else if (normalized.includes("'failed'")) { r.processing_status = 'failed'; r.last_error = v[0]; } r.attempt_count = (r.attempt_count ?? 0) + 1; } }
   else if (/^INSERT INTO action_items/i.test(normalized)) upsert(store.action_items, 'canonical_subject_key', row(['id','canonical_subject_key','kind','title','repo','url','updated_at','reason','suggested_action','evidence_json','source'], v, { ignored_at: null }));
+  else if (/^DELETE FROM action_items/i.test(normalized)) store.action_items = store.action_items.filter((r) => r.canonical_subject_key !== v[0]);
   else if (/^INSERT INTO rate_limit_snapshots/i.test(normalized)) store.rate_limit_snapshots.push(row(['id','resource','remaining','reset_at','captured_at'], v));
   else if (/^INSERT INTO item_evidence/i.test(normalized)) store.item_evidence.push(row(['id','action_item_id','evidence_json','created_at'], v));
+  else if (/^DELETE FROM item_evidence/i.test(normalized)) store.item_evidence = store.item_evidence.filter((r) => r.action_item_id !== v[0]);
   else if (/^INSERT OR IGNORE INTO ignored_items/i.test(normalized)) { if (!store.ignored_items.some((r) => r.canonical_subject_key === v[0])) store.ignored_items.push({ canonical_subject_key: v[0], reason: v[1], ignored_at: v[2] }); }
   else throw new Error(`Unsupported SQL run: ${sql}`);
 }

@@ -14,6 +14,7 @@ export async function runDiscovery(env: Env, trigger: 'cron' | 'manual' = 'manua
     const messages: ProcessGitHubChangeMessage[] = [];
     for (const change of changes) messages.push(await persistChange(env, change));
     await enqueueChanges(env, messages);
+    await reconcileResolvedActionItems(env, changes);
     await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', new Date().toISOString(), changes.length, runId).run());
     return { runId, candidateCount: changes.length };
   } catch (error) {
@@ -83,6 +84,16 @@ export async function processGithubChange(env: Env, msg: ProcessGitHubChangeMess
 
 async function incrementProcessedCount(env: Env, runId: string) {
   await retryD1(() => env.DB.prepare('UPDATE scan_runs SET processed_count = processed_count + 1 WHERE id = ?').bind(runId).run());
+}
+
+async function reconcileResolvedActionItems(env: Env, changes: GitHubChange[]) {
+  const liveInvitationKeys = new Set(changes.filter((change) => change.sourceEndpoint.includes('invitations')).map((change) => change.canonicalSubjectKey));
+  const existingInvitations = await env.DB.prepare("SELECT * FROM action_items WHERE kind = 'invitation'").all<Record<string, any>>();
+  for (const row of existingInvitations.results.filter((item) => item.kind === 'invitation')) {
+    if (liveInvitationKeys.has(row.canonical_subject_key)) continue;
+    await retryD1(() => env.DB.prepare('DELETE FROM action_items WHERE canonical_subject_key = ?').bind(row.canonical_subject_key).run());
+    await retryD1(() => env.DB.prepare('DELETE FROM item_evidence WHERE action_item_id = ?').bind(row.id).run());
+  }
 }
 
 async function discoverFromGitHub(runId: string, token: string, ownerLogin: string, env: Env): Promise<GitHubChange[]> {

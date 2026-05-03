@@ -89,7 +89,24 @@ See [docs/deploy.md](docs/deploy.md).
 
 ## Updating a deployed fork
 
-If you deployed with the button, your app runs from your own fork. A coding agent can update it with this flow:
+If you deployed with the button, your app runs from your own fork. Sunrise uses a privacy-preserving, agent-readable upgrade contract instead of automatic updates or a deployment registry.
+
+In the app, open **Settings → Sunrise version** or `/changelog` to see the currently bundled version and release notes. Viewing `/changelog` records `last_seen_sunrise_version` in your own D1 database only; nothing is sent upstream.
+
+Ask your coding agent to follow:
+
+```txt
+docs/agent-upgrade-contract.md
+```
+
+Useful machine-readable files:
+
+```txt
+sunrise.version.json
+CHANGELOG.md
+```
+
+The short version of the agent flow is:
 
 ```bash
 git remote -v

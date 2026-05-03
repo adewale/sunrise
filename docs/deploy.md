@@ -31,6 +31,19 @@ Deploy-button flow, following the Tasche pattern:
 4. Sign in with GitHub.
 5. Click **Manual refresh** to create the first scan.
 
+## Updates after deployment
+
+Deploy-button users own their fork and Cloudflare resources, so Sunrise does not auto-update deployed instances and does not keep a registry of deployments.
+
+Sunrise includes a privacy-preserving update surface:
+
+- `/settings` shows the current bundled Sunrise version.
+- `/changelog` shows bundled release notes and records `last_seen_sunrise_version` in the deployer's own D1 database.
+- `sunrise.version.json` exposes machine-readable version and upgrade metadata.
+- `docs/agent-upgrade-contract.md` tells a coding agent how to fetch upstream, preserve deployment-specific Cloudflare config, verify, migrate, deploy, and report back.
+
+No update check or changelog view sends Worker URLs, account IDs, OAuth tokens, GitHub inbox data, or install IDs to Sunrise upstream.
+
 ## Manual CLI deploy
 
 ```bash

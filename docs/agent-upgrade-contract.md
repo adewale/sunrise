@@ -19,14 +19,26 @@ This document defines the privacy-preserving contract that lets a deployer's cod
 - Sunrise does not send anonymous or identifiable deployment telemetry upstream.
 - Sunrise does not require a central installation registry.
 
+## Implementation files
+
+Sunrise exposes update information through files that are safe for coding agents to read:
+
+- `sunrise.version.json` — machine-readable current version, upstream repo, changelog path, upgrade contract path, verify command, and deploy command.
+- `CHANGELOG.md` — human- and agent-readable release notes with explicit agent upgrade notes.
+- `/changelog` — in-product changelog page. Viewing it records `last_seen_sunrise_version` in the deployer's own D1 database.
+- `/settings` — shows the local Sunrise version card and links to `/changelog`.
+
+These surfaces are local to the deployed app/fork. They do not register the deployment or send telemetry upstream.
+
 ## Contract for coding agents
 
 When a user asks a coding agent to upgrade Sunrise, the agent should treat the current repository as a user-owned deploy fork.
 
-1. Inspect the repository state.
+1. Inspect the repository state and version metadata.
    ```sh
    git status --short
    git remote -v
+   cat sunrise.version.json
    ```
 
 2. Preserve local deployment configuration.

@@ -34,6 +34,7 @@ export type GitHubActionItem = {
     repoOwner?: string;
     isOwnRepo?: boolean;
     isAuthored?: boolean;
+    notificationReason?: string;
   };
   source: ActionSource;
 };

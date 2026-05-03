@@ -30,6 +30,7 @@ export function classifyChange(change: GitHubChange, ownerLogin: string): GitHub
     repoOwner: raw.repoOwner as string | undefined,
     isOwnRepo: raw.isOwnRepo as boolean | undefined,
     isAuthored: raw.isAuthored as boolean | undefined,
+    notificationReason: raw.reason as string | undefined,
   };
 
   const make = (kind: ActionKind, why: string, action: string): GitHubActionItem => ({

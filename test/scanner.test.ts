@@ -34,7 +34,7 @@ describe('GitHub discovery', () => {
     const db = createMemoryDb();
     const result = await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
 
-    expect(result.candidateCount).toBe(8);
+    expect(result.candidateCount).toBe(7);
     const changes = await db.prepare('SELECT * FROM github_changes').all<Record<string, any>>();
     expect(changes.results.map((row) => row.source_endpoint)).toEqual(expect.arrayContaining([
       'notifications',
@@ -54,10 +54,25 @@ describe('GitHub discovery', () => {
       'authored_pr_pending',
       'maintenance',
       'repo_pr',
-      'notification',
     ]));
     const run = (await db.prepare('SELECT * FROM scan_runs').first<Record<string, any>>())!;
-    expect(run.processed_count).toBe(8);
+    expect(run.processed_count).toBe(7);
+  });
+
+  it('can include watched-repository notifications when enabled', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/notifications')) return Response.json([notification('subscribed', 'Watched repo issue', 'https://api.github.com/repos/o/r/issues/2', '2026-05-01T09:00:00Z')]);
+      if (u.includes('/search/issues')) return search([]);
+      return Response.json([]);
+    }));
+    const db = createMemoryDb();
+    await db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)').bind('include_subscribed_notifications', 'true', '2026-05-01T00:00:00Z').run();
+    const result = await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
+    const items = await db.prepare('SELECT * FROM action_items').all<Record<string, any>>();
+    expect(result.candidateCount).toBe(1);
+    expect(items.results[0].kind).toBe('notification');
+    expect(JSON.parse(items.results[0].evidence_json).notificationReason).toBe('subscribed');
   });
 
   it('removes snapshot-backed action items after GitHub no longer returns them', async () => {

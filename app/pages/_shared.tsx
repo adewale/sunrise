@@ -11,7 +11,7 @@ type ActionItem = {
   reason: string;
   suggestedAction: string;
   source: string;
-  evidence?: { isOwnRepo?: boolean; isAuthored?: boolean; author?: string; checks?: string; mergeable?: string };
+  evidence?: { isOwnRepo?: boolean; isAuthored?: boolean; author?: string; checks?: string; mergeable?: string; notificationReason?: string };
 };
 
 export function Stat({ label, value }: { label: string; value: ReactNode }) {
@@ -37,10 +37,10 @@ export function SetupGuide({ setup }: { setup: any }) {
 
 export function Item({ item, ownerLogin = '' }: { item: ActionItem; ownerLogin?: string }) {
   const when = formatInboxTime(item.updatedAt);
-  const chips = [itemTypeLabel(item), itemRelationshipLabel(item, ownerLogin), item.repo].filter(Boolean);
+  const chips = [itemTypeLabel(item), itemRelationshipLabel(item, ownerLogin)].filter(Boolean);
   const repoOwner = item.repo.split('/')[0] || 'github';
   const author = item.evidence?.author;
-  return <article className="item"><time className="item-time" dateTime={item.updatedAt}><span>{when.date}</span><strong>{when.time}</strong></time><div className="item-main"><div className="item-topline"><div className="item-signals"><span className="type-icon" aria-hidden="true">{itemIcon(item)}</span><img className="repo-avatar" src={`https://github.com/${repoOwner}.png?size=40`} alt="" loading="lazy" />{author ? <img className="author-avatar" src={`https://github.com/${author}.png?size=40`} alt="" loading="lazy" /> : null}{checkDot(item)}</div><div className="chips">{chips.map((chip) => <span className="chip" key={chip}>{chip}</span>)}</div></div><a className="item-title" href={item.url}>{item.title}</a><p>{item.reason}</p><p className="action">{item.suggestedAction} <span className="relative-time">· updated {relativeTime(item.updatedAt)}</span></p></div></article>;
+  return <article className="item" id={`item-${item.id}`}><a className="item-time" href={`/items/${encodeURIComponent(item.id)}`} title="Open this card" aria-label={`Open card updated ${when.date} ${when.time}`}><time dateTime={item.updatedAt}><span>{when.date}</span><strong>{when.time}</strong></time></a><div className="item-main"><div className="item-topline"><div className="item-signals"><span className="type-icon" aria-hidden="true">{itemIcon(item)}</span><img className="repo-avatar" src={`https://github.com/${repoOwner}.png?size=40`} alt="" loading="lazy" />{author ? <img className="author-avatar" src={`https://github.com/${author}.png?size=40`} alt="" loading="lazy" /> : null}{checkDot(item)}</div><div className="chips">{chips.map((chip) => <span className="chip" key={chip}>{chip}</span>)}{item.repo ? <a className="chip repo-chip" href={repoUrl(item.repo)} target="_blank" rel="noreferrer">{item.repo} ↗</a> : null}</div></div><a className="item-title" href={item.url}>{item.title}</a><p>{item.reason}</p><p className="action">{item.suggestedAction} <span className="relative-time">· updated {relativeTime(item.updatedAt)}</span></p></div></article>;
 }
 
 function checkDot(item: ActionItem) {
@@ -74,11 +74,12 @@ function relativeTime(value: string) {
   return `${days}d ago`;
 }
 
+function repoUrl(repo: string) { return `https://github.com/${repo}`; }
 function isPullRequestItem(item: ActionItem) { return item.url.includes('/pull/') || item.kind.includes('pr') || item.kind === 'review_requested' || item.kind === 'repo_pr'; }
 function isIssueItem(item: ActionItem) { return !isPullRequestItem(item) && (item.url.includes('/issues/') || item.kind === 'assigned' || item.kind === 'maintenance' || item.source === 'issues'); }
 function isAuthoredPrItem(item: ActionItem) { return item.kind.startsWith('authored_pr') || item.evidence?.isAuthored === true; }
 function isOwnRepoItem(item: ActionItem, ownerLogin: string) { const repoOwner = item.repo.split('/')[0]?.toLowerCase(); return item.evidence?.isOwnRepo === true || (!!ownerLogin && repoOwner === ownerLogin.toLowerCase()); }
 function itemTypeLabel(item: ActionItem) { if (isPullRequestItem(item)) return 'Pull request'; if (isIssueItem(item)) return 'Issue'; if (item.kind.includes('discussion')) return 'Discussion'; return item.kind.replaceAll('_', ' '); }
-function itemRelationshipLabel(item: ActionItem, ownerLogin = '') { if (isAuthoredPrItem(item) && isPullRequestItem(item)) return isOwnRepoItem(item, ownerLogin) ? 'My PR · own repo' : 'My PR · other repo'; if (item.kind === 'repo_pr') return 'Other person’s PR · my repo'; if (item.kind === 'review_requested') return 'Review requested'; if (item.kind === 'maintenance') return 'Created by me'; return item.source; }
+function itemRelationshipLabel(item: ActionItem, ownerLogin = '') { if (isAuthoredPrItem(item) && isPullRequestItem(item)) return isOwnRepoItem(item, ownerLogin) ? 'My PR · own repo' : 'My PR · other repo'; if (item.kind === 'repo_pr') return 'Other person’s PR · my repo'; if (item.kind === 'review_requested') return 'Review requested'; if (item.kind === 'mention') return 'Mentioned you'; if (item.kind === 'assigned') return 'Assigned to you'; if (item.kind === 'notification' && item.evidence?.notificationReason === 'subscribed') return 'Watched repo'; if (item.kind === 'maintenance') return 'Created by me'; return item.source; }
 function itemIcon(item: ActionItem) { if (isPullRequestItem(item)) return '⑂'; if (isIssueItem(item)) return '○'; if (item.kind.includes('discussion')) return '◌'; if (item.kind === 'workflow_failure') return '×'; return '•'; }
 export function capitalize(value: string) { return value ? value.slice(0, 1).toUpperCase() + value.slice(1) : value; }

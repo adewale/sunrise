@@ -47,6 +47,7 @@ function select(store: Record<string, Row[]>, sql: string, v: any[]) {
   if (/FROM settings/i.test(normalized)) {
     const literalKey = /key = '([^']+)'/i.exec(normalized)?.[1];
     const key = v[0] ?? literalKey;
+    if (!key && normalized.includes('OR key =')) return store.settings;
     return store.settings.filter((r) => !key || r.key === key);
   }
   if (/FROM sessions/i.test(normalized)) return store.sessions.filter((r) => !v[0] || r.id === v[0]);

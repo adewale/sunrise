@@ -14,7 +14,8 @@ export async function runDiscovery(env: Env, trigger: 'cron' | 'manual' = 'manua
   const now = new Date().toISOString();
   await retryD1(() => env.DB.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, 0, 0)').bind(runId, trigger, 'running', now).run());
   try {
-    const changes = env.TEST_GITHUB_FIXTURES === 'true' || !accessToken ? fixtureChanges(runId, env.OWNER_LOGIN ?? 'owner') : await discoverFromGitHub(runId, accessToken, env.OWNER_LOGIN ?? '', env);
+    const discovered = env.TEST_GITHUB_FIXTURES === 'true' || !accessToken ? fixtureChanges(runId, env.OWNER_LOGIN ?? 'owner') : await discoverFromGitHub(runId, accessToken, env.OWNER_LOGIN ?? '', env);
+    const changes = await filterBySettings(env, discovered);
     if (await snapshotUnchanged(env, changes)) {
       await writeRefreshSummary(env, { status: 'no_change', candidateCount: 0, resolvedCount: 0 });
       await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('no_change', new Date().toISOString(), 0, runId).run());
@@ -37,6 +38,12 @@ export async function runDiscovery(env: Env, trigger: 'cron' | 'manual' = 'manua
     await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, error = ? WHERE id = ?').bind('failed', new Date().toISOString(), error instanceof Error ? error.message : String(error), runId).run());
     throw error;
   }
+}
+
+async function filterBySettings(env: Env, changes: GitHubChange[]) {
+  const includeSubscribed = (await readSetting(env, 'include_subscribed_notifications')) === 'true';
+  if (includeSubscribed) return changes;
+  return changes.filter((change) => !(change.sourceEndpoint === 'notifications' && String(change.raw?.reason ?? '').toLowerCase() === 'subscribed'));
 }
 
 async function snapshotUnchanged(env: Env, changes: GitHubChange[]) {

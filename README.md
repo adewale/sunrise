@@ -62,7 +62,7 @@ Override targets with `SUNRISE_LANDING_URL`, `SUNRISE_APP_URL`, or `SUNRISE_SCRE
    - `SESSION_SECRET` — a long random string
 5. Reload your Worker URL, sign in with GitHub, and run **Manual refresh**.
 
-Sunrise also runs scheduled refreshes three times a day. Scheduled refreshes use the latest stored owner session token, compare the new GitHub snapshot with the previous one, and skip queue processing when nothing changed.
+Sunrise also runs scheduled refreshes three times a day: 06:00, 12:00, and 18:00 in the deployment's configured cron timezone. Cloudflare cron expressions are stored in `wrangler.jsonc`; adjust them in your fork if you want different local collection times. Scheduled refreshes use the latest stored owner session token, compare the new GitHub snapshot with the previous one, and skip queue processing when nothing changed.
 
 The first page includes the same setup checklist with the exact callback URL for that deployed instance.
 

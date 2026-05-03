@@ -280,6 +280,8 @@ function nextLink(link: string | null): string | null {
 }
 
 function notificationToChange(runId: string, n: any): GitHubChange {
+  const subjectUrl = n.subject?.url ?? n.url;
+  const htmlUrl = githubWebUrl(n.subject?.latest_comment_url) ?? githubWebUrl(subjectUrl) ?? n.repository?.html_url ?? githubWebUrl(n.url) ?? n.url;
   return {
     id: crypto.randomUUID(),
     runId,
@@ -287,8 +289,8 @@ function notificationToChange(runId: string, n: any): GitHubChange {
     sourceEndpoint: 'notifications',
     repo: n.repository?.full_name ?? '',
     subjectType: n.subject?.type ?? 'Notification',
-    subjectUrl: n.subject?.url ?? n.url,
-    htmlUrl: n.subject?.latest_comment_url ?? n.repository?.html_url ?? n.url,
+    subjectUrl,
+    htmlUrl,
     updatedAt: n.updated_at,
     raw: { reason: n.reason, title: n.subject?.title, unread: n.unread },
   };
@@ -344,6 +346,15 @@ function changeSpecificity(change: GitHubChange): number {
 
 function canonicalKey(n: any): string {
   return String(n.subject?.url ?? n.url ?? n.id).replace('https://api.github.com/repos/', 'github:');
+}
+
+function githubWebUrl(url: string | undefined) {
+  if (!url) return null;
+  return url
+    .replace(/^https:\/\/api\.github\.com\/repos\//, 'https://github.com/')
+    .replace(/\/pulls\//, '/pull/')
+    .replace(/\/issues\/comments\/\d+$/, '')
+    .replace(/\/pulls\/comments\/\d+$/, '');
 }
 
 function fixtureChanges(runId: string, owner: string): GitHubChange[] {

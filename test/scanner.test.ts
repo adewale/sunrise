@@ -46,6 +46,7 @@ describe('GitHub discovery', () => {
       'search/involved',
     ]));
     const items = await db.prepare('SELECT * FROM action_items').all<Record<string, any>>();
+    expect(items.results.find((row) => row.kind === 'mention')?.url).toBe('https://github.com/o/r/issues/1');
     expect(items.results.map((row) => row.kind)).toEqual(expect.arrayContaining([
       'mention',
       'review_requested',

@@ -108,6 +108,25 @@ describe('GitHub discovery', () => {
     expect(runs.results.some((run) => run.status === 'no_change')).toBe(true);
   });
 
+  it('uses GitHub ETags to detect an unchanged snapshot early', async () => {
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes('/notifications')) {
+        calls++;
+        if ((init?.headers as Record<string, string>)?.['If-None-Match']) return new Response(null, { status: 304 });
+        return Response.json([], { headers: { etag: '"notifications-v1"' } });
+      }
+      if (u.includes('/search/issues')) return search([]);
+      return Response.json([]);
+    }));
+    const db = createMemoryDb();
+    await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
+    const second = await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token') as any;
+    expect(calls).toBeGreaterThan(1);
+    expect(second.noChange).toBe(true);
+  });
+
   it('uses sendBatch when a queue binding is available', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);

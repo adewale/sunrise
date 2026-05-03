@@ -396,3 +396,135 @@ SCAN action_items USING INDEX idx_action_items_updated_at
 ```
 
 Record query plans in docs while the schema is still small. It makes future regressions obvious.
+
+## 28. Deploy-fork upgrades need a contract, not magic
+
+Deploy to Cloudflare gives users their own fork and their own Cloudflare resources. That is the correct ownership model, but it also means upstream changes do not automatically reach deployed instances.
+
+Do not solve this by phoning home, tracking installs, or trying to mutate user forks from the Worker. The safer pattern is an agent-readable upgrade contract:
+
+```txt
+docs/agent-upgrade-contract.md
+sunrise.version.json
+CHANGELOG.md
+/changelog
+/settings version card
+```
+
+The contract should tell a coding agent how to:
+
+1. inspect the current fork;
+2. add/fetch upstream;
+3. merge a release or `upstream/main`;
+4. preserve deployment-specific `wrangler.jsonc` values;
+5. run verification;
+6. apply D1 migrations;
+7. deploy;
+8. report what changed.
+
+This works with the grain of user-owned forks and coding-agent workflows.
+
+## 29. Update visibility can be local and privacy-preserving
+
+A self-hosted app can explain its current version without registering the deployment. Sunrise's update surfaces are local:
+
+- `sunrise.version.json` gives agents machine-readable metadata.
+- `CHANGELOG.md` gives humans and agents release notes.
+- `/settings` shows the local version card.
+- `/changelog` shows bundled release notes.
+- D1 stores `last_seen_sunrise_version` in the deployer's own database.
+
+Viewing the changelog should not send Worker URLs, account IDs, install IDs, OAuth tokens, or GitHub inbox data upstream. If public release checks are added later, make them pull-only against GitHub release metadata and clearly document what is fetched.
+
+## 30. Changelogs should be product surfaces, not only repository files
+
+Pi's changelog flow is a useful model: parse versioned changelog entries, remember what version a user last saw, show a quiet “what changed” notice after updates, and keep a command/page for details.
+
+For Sunrise, the equivalent is `/changelog` plus a `/settings` version card. The key lesson is cadence: do not interrupt normal inbox work, but make changes discoverable at the moment a user or their coding agent is thinking about upgrades.
+
+Changelog entries should include an explicit agent block:
+
+```md
+### Agent upgrade notes
+
+- Preserve deployment-specific Cloudflare config.
+- Apply migrations: ...
+- Run: npm run verify
+- Deploy: npx wrangler deploy
+```
+
+That makes releases safer for deploy-button forks.
+
+## 31. GitHub notification reasons explain social distance
+
+GitHub `/notifications` includes a `reason` field such as `mention`, `review_requested`, `assign`, or `subscribed`. That field is crucial provenance.
+
+A notification with `reason=subscribed` means “you watch this repo/thread,” not “you were directly addressed.” Treating all notification rows equally makes the inbox feel noisy and mysterious.
+
+Default rule:
+
+- keep direct reasons in the inbox;
+- hide watched-repository `subscribed` notifications by default;
+- offer a setting to include them;
+- preserve the reason in evidence so the UI can explain why the card exists.
+
+## 32. Cards need subtle provenance, not just classification
+
+Social inboxes and feeds work best when they answer “why am I seeing this?” without making every row verbose.
+
+For Sunrise, good provenance hints are short relationship chips:
+
+```txt
+Mentioned you
+Assigned to you
+Review requested
+Created by me
+Other person’s PR · my repo
+Watched repo
+```
+
+Avoid long explanations in the main scan path. Put fuller details on a card page or tooltip:
+
+```txt
+Source: GitHub notifications
+Reason: subscribed
+First seen: ...
+```
+
+This mirrors social-feed design: lightweight reason labels in the feed, deeper provenance on demand.
+
+## 33. Timestamps can be durable card handles
+
+A timestamp is already the user's scan anchor. Making it a link gives the row a quiet permalink without adding another button.
+
+For Sunrise, timestamp links to `/items/:id` let users:
+
+- open multiple cards in tabs as a temporary TODO list;
+- share or reference a specific Sunrise card;
+- inspect provenance/details without leaving the inbox;
+- keep the title link dedicated to GitHub.
+
+The rule is: title links go to GitHub; timestamp links go to the local card.
+
+## 34. GitHub API URLs must never leak into human navigation
+
+GitHub API payloads often contain URLs like:
+
+```txt
+https://api.github.com/repos/owner/repo/issues/35
+```
+
+Those are useful canonical subjects for machines but bad links for humans. Convert notification `subject.url` and `latest_comment_url` into browser URLs before persisting action items:
+
+```txt
+https://github.com/owner/repo/issues/35
+https://github.com/owner/repo/pull/35
+```
+
+Regression tests should assert card URLs are human-facing. Existing stale rows may still need reconciliation or one-time cleanup.
+
+## 35. Repo chips should be links
+
+Repository names are context and navigation. If a card shows `owner/repo`, users expect it to open that repository.
+
+Make repo chips links to GitHub and keep them visually chip-like. This improves skimming and avoids forcing users to infer or copy repository URLs.

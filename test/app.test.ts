@@ -218,6 +218,27 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('Last checked');
   });
 
+  it('renders privacy-preserving changelog and marks it seen', async () => {
+    const db = createMemoryDb();
+    await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
+    const res = await app.request('/changelog', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
+    const html = await res.text();
+    expect(html).toContain('Changelog');
+    expect(html).toContain('does not register this deployment upstream');
+    const setting = await db.prepare('SELECT value FROM settings WHERE key = ?').bind('last_seen_sunrise_version').first<Record<string, any>>();
+    expect(setting?.value).toBe('0.1.0');
+  });
+
+  it('renders settings update card', async () => {
+    const db = createMemoryDb();
+    await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
+    const res = await app.request('/settings', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
+    const html = await res.text();
+    expect(html).toContain('Sunrise version');
+    expect(html).toContain('docs/agent-upgrade-contract.md');
+    expect(html).toContain('/changelog');
+  });
+
   it('lets the owner change inbox page size in settings', async () => {
     const db = createMemoryDb();
     await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();

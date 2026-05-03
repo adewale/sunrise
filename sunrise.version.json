@@ -1,0 +1,11 @@
+{
+  "name": "sunrise",
+  "version": "0.1.0",
+  "commit": "local",
+  "upstream": "https://github.com/adewale/sunrise",
+  "changelog": "CHANGELOG.md",
+  "upgradeContract": "docs/agent-upgrade-contract.md",
+  "verify": "npm run verify",
+  "deploy": "npx wrangler deploy",
+  "privacy": "No phone-home or deployment registry is required for update visibility. Deployer-owned agents pull public upstream code."
+}

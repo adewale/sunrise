@@ -122,6 +122,8 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('.sun-icon{left:10px');
     expect(html).toContain('.moon-icon{right:10px');
     expect(html).toContain('Manual refresh');
+    expect(html).toContain('data-refresh-form');
+    expect(html).toContain('Collecting GitHub');
     expect(html).toContain('Collected GitHub');
     expect(html).toContain('found ·');
     expect(html).not.toContain('Ignore</button>');

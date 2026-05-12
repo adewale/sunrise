@@ -15,7 +15,7 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('Setup checklist');
     expect(html).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg">');
     expect(html).toContain('/raw/main/docs/assets/screenshots/dashboard.png');
-    expect(html).toContain('/assets/sunrise-inertia-client.js');
+    expect(html).toContain('/assets/sunrise-client.js');
   });
 
   it('can render a project landing page without personal setup claims', async () => {
@@ -28,11 +28,10 @@ describe('Sunrise app routes', () => {
     expect(html).not.toContain('Sign in with GitHub');
   });
 
-  it('serves a progressive Inertia client bundle', async () => {
-    const res = await app.request('/assets/sunrise-inertia-client.js', {}, { DB: createMemoryDb() } as unknown as Env);
+  it('serves a progressive client navigation bundle', async () => {
+    const res = await app.request('/assets/sunrise-client.js', {}, { DB: createMemoryDb() } as unknown as Env);
     const js = await res.text();
     expect(res.headers.get('content-type')).toContain('text/javascript');
-    expect(js).toContain("X-Inertia");
     expect(js).toContain('history.pushState');
     expect(js).toContain("document.addEventListener('submit'");
     expect(js).not.toContain('location.reload');
@@ -143,24 +142,6 @@ describe('Sunrise app routes', () => {
     const html = await (await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env)).text();
     expect(html).toMatch(/updated\s*(?:<!-- -->)?\s*today/);
     expect(html).toMatch(/updated\s*(?:<!-- -->)?\s*yesterday/);
-  });
-
-  it('serves dashboard through the Inertia protocol without changing the HTML view', async () => {
-    const db = createMemoryDb();
-    await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
-    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
-      .bind('i1', 'k1', 'review_requested', 'Review the launch PR', 'o/r', 'https://github.com/o/r/pull/1', '2026-04-30T00:00:00Z', 'You were requested for review.', 'Review PR', '{}', 'notifications').run();
-
-    const htmlRes = await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
-    const html = await htmlRes.text();
-    expect(html).toContain('data-page="app"');
-    expect(html).toContain('"component":"Dashboard"');
-    expect(html).toContain('Review the launch PR');
-
-    const inertiaRes = await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid', 'X-Inertia': 'true', 'X-Inertia-Version': 'sunrise-1' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
-    const page = await inertiaRes.json() as any;
-    expect(page.component).toBe('Dashboard');
-    expect(page.props.items[0].title).toBe('Review the launch PR');
   });
 
   it('returns paginated dashboard JSON with configurable 50 item default', async () => {

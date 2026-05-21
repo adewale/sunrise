@@ -1,0 +1,21 @@
+import type app from '../src/app'
+
+export type PageName = 'Changelog' | 'Dashboard' | 'Design' | 'Item' | 'Landing' | 'Runs' | 'Settings' | 'Setup'
+
+declare module '@hono/inertia' {
+  interface InertiaPages {
+    'Dashboard': unknown
+    'Design': unknown
+    'Changelog': unknown
+    'Item': unknown
+    'Landing': unknown
+    'Runs': unknown
+    'Settings': unknown
+    'Setup': unknown
+  }
+  interface AppRegistry {
+    app: typeof app
+  }
+}
+
+export type { PageProps } from '@hono/inertia'

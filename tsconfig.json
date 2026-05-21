@@ -5,8 +5,10 @@
     "moduleResolution": "Bundler",
     "strict": true,
     "types": ["vitest/globals", "node"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src", "test", "worker-configuration.d.ts"]
+  "include": ["src", "test", "app", "worker-configuration.d.ts"]
 }

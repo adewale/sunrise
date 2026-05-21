@@ -1,4 +1,15 @@
 import { Hono } from 'hono';
+import { inertia, serializePage, type PageObject } from '@hono/inertia';
+import type { FC } from 'hono/jsx';
+import ChangelogPage from '../app/pages/Changelog';
+import DashboardPage from '../app/pages/Dashboard';
+import DesignPage from '../app/pages/Design';
+import ItemPage from '../app/pages/Item';
+import LandingPage from '../app/pages/Landing';
+import RunsPage from '../app/pages/Runs';
+import SettingsPage from '../app/pages/Settings';
+import SetupPage from '../app/pages/Setup';
+import { DashboardHeader, SettingsHeader, SetupChecks, SetupGuide } from '../app/pages/_shared';
 import type { Env } from './env';
 import { clearSessionCookie, getSession, retryD1, sessionCookie } from './db';
 import type { GitHubActionItem } from './types';
@@ -6,10 +17,22 @@ import { processGithubChange, runDiscovery } from './scanner';
 import { SUNRISE_CHANGELOG, SUNRISE_VERSION } from './version';
 
 type Bindings = Env;
+const pageComponents: Record<string, FC<any>> = {
+  Changelog: ChangelogPage,
+  Dashboard: DashboardPage,
+  Design: DesignPage,
+  Landing: LandingPage,
+  Item: ItemPage,
+  Runs: RunsPage,
+  Settings: SettingsPage,
+  Setup: SetupPage,
+};
 const app = new Hono<{ Bindings: Bindings }>();
 
+app.use(inertia({ version: 'sunrise-1', rootView: renderInertiaRoot }));
+
 app.get('/favicon.svg', (c) => new Response(renderFaviconSvg(), { headers: { 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': 'public, max-age=86400' } }));
-app.get('/assets/sunrise-client.js', (c) => new Response(sunriseClientBundle(), { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=3600' } }));
+app.get('/assets/sunrise-inertia-client.js', (c) => new Response(inertiaClientBundle(), { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=3600' } }));
 
 app.get('/', async (c) => {
   const session = await getSession(c.env.DB, c.req.header('Cookie') ?? null);
@@ -18,17 +41,17 @@ app.get('/', async (c) => {
   const setup = projectLanding ? null : await setupDiagnostics(c.env, c.req.url);
   const props = { product: 'Sunrise', signedIn: false, projectLanding, setup, repoUrl: c.env.GITHUB_REPO_URL ?? 'https://github.com/adewale/sunrise' };
   if (c.req.query('json') !== undefined) return c.json(props);
-  return html(renderLanding(props));
+  return c.render('Landing', props);
 });
 
 app.get('/design', (c) => {
-  return html(renderDesignLanguage());
+  return c.render('Design', { product: 'Sunrise' });
 });
 
 app.get('/setup', async (c) => {
   const setup = await setupDiagnostics(c.env, c.req.url);
   if (c.req.query('json') !== undefined || c.req.header('Accept')?.includes('application/json')) return c.json(setup);
-  return html(renderSetupGuide(setup));
+  return c.render('Setup', { product: 'Sunrise', setup });
 });
 
 app.get('/login', async (c) => {
@@ -38,7 +61,7 @@ app.get('/login', async (c) => {
   const clientCheck = await checkGitHubClientId(c.env.GITHUB_CLIENT_ID!, callback.toString());
   if (clientCheck.status === 'fail') {
     const setup = await setupDiagnostics(c.env, c.req.url);
-    return html(`<section class="section panel"><p class="eyebrow">Sign-in blocked</p><h1>OAuth setup needs attention</h1><p class="muted">Sunrise checked GitHub before redirecting so you do not land on a confusing GitHub 404.</p>${renderSetupChecks([clientCheck])}<p><a class="button primary" href="/setup">Open setup diagnostics</a></p></section>${renderSetupGuide(setup)}`, 400);
+    return html(`<section class="section panel"><p class="eyebrow">Sign-in blocked</p><h1>OAuth setup needs attention</h1><p class="muted">Sunrise checked GitHub before redirecting so you do not land on a confusing GitHub 404.</p>${(<SetupChecks checks={[clientCheck]} />).toString()}<p><a class="button primary" href="/setup">Open setup diagnostics</a></p></section>${(<SetupGuide setup={setup} />).toString()}`, 400);
   }
   const state = crypto.randomUUID();
   const verifier = crypto.randomUUID();
@@ -90,7 +113,7 @@ app.get('/dashboard', async (c) => {
   if (c.req.query('refresh') === 'started') props.notice = { kind: 'success', message: `Manual refresh started. Found ${c.req.query('candidates') ?? '0'} GitHub events; the inbox will fill in as processing finishes. View details on the runs page.` };
   if (c.req.query('refresh') === 'failed') props.notice = { kind: 'fail', message: `Manual refresh failed${c.req.query('error') ? `: ${c.req.query('error')}` : '.'}` };
   if (c.req.query('json') !== undefined || c.req.header('Accept')?.includes('application/json')) return c.json(props);
-  return html(renderDashboard(props), 200, renderDashboardHeader(props));
+  return c.render('Dashboard', props);
 });
 
 app.get('/items/:id', async (c) => {
@@ -99,7 +122,7 @@ app.get('/items/:id', async (c) => {
   const row = await c.env.DB.prepare('SELECT * FROM action_items WHERE id = ? AND ignored_at IS NULL LIMIT 1').bind(c.req.param('id')).first<Record<string, any>>();
   const props = { product: 'Sunrise', signedInAs: session.githubLogin, item: row ? rowToItem(row) : null };
   if (c.req.header('Accept')?.includes('application/json')) return c.json(props);
-  return html(renderItemPage(props));
+  return c.render('Item', props);
 });
 
 app.get('/settings', async (c) => {
@@ -107,8 +130,7 @@ app.get('/settings', async (c) => {
   if (session instanceof Response) return session;
   const settings = await readSettings(c.env.DB);
   const lastSeenVersion = await readSetting(c.env.DB, 'last_seen_sunrise_version');
-  const props = { product: 'Sunrise', signedInAs: session.githubLogin, settings, version: SUNRISE_VERSION, update: { currentVersion: SUNRISE_VERSION.version, lastSeenVersion, hasUnseenChangelog: lastSeenVersion !== SUNRISE_VERSION.version } };
-  return html(renderSettings(settings, props), 200, renderSettingsHeader(props));
+  return c.render('Settings', { product: 'Sunrise', signedInAs: session.githubLogin, settings, version: SUNRISE_VERSION, update: { currentVersion: SUNRISE_VERSION.version, lastSeenVersion, hasUnseenChangelog: lastSeenVersion !== SUNRISE_VERSION.version } });
 });
 
 app.get('/changelog', async (c) => {
@@ -117,7 +139,7 @@ app.get('/changelog', async (c) => {
   await writeSetting(c.env.DB, 'last_seen_sunrise_version', SUNRISE_VERSION.version);
   const props = { product: 'Sunrise', signedInAs: session.githubLogin, version: SUNRISE_VERSION, changelog: SUNRISE_CHANGELOG };
   if (c.req.header('Accept')?.includes('application/json')) return c.json(props);
-  return html(renderChangelog(props), 200, renderSettingsHeader(props));
+  return c.render('Changelog', props);
 });
 
 app.post('/settings', async (c) => {
@@ -147,7 +169,7 @@ app.get('/runs', async (c) => {
   if (session instanceof Response) return session;
   const props = await runsProps(c.env, c.req.query('runId'), c.req.query('refresh'), c.req.query('candidates'), c.req.query('error'));
   if (c.req.header('Accept')?.includes('application/json')) return c.json(props);
-  return html(renderRuns(props));
+  return c.render('Runs', props);
 });
 
 app.post('/logout', async (c) => {
@@ -528,216 +550,24 @@ function scanStatus(run: Record<string, any> | null) {
   return Date.now() - Date.parse(run.completed_at ?? run.started_at) > 36 * 60 * 60 * 1000 ? 'stale' : 'fresh';
 }
 
-function renderLanding(props: any) {
-  const repoUrl = String(props.repoUrl ?? 'https://github.com/adewale/sunrise').replace(/\/$/, '');
-  const signIn = props.projectLanding ? '' : ' <a class="button ghost" href="/login">Sign in with GitHub</a>';
-  return `
-    <section class="hero panel">
-    <p class="actions"><a class="button primary" href="${escapeHtml(repoUrl)}">Deploy your own</a>${signIn}</p>
-    <p class="muted">Single-user, read-only by default, and your snapshots stay in your Cloudflare account.</p><figure class="product-shot"><img src="${escapeHtml(repoUrl)}/raw/main/docs/assets/screenshots/dashboard.png" alt="Sunrise inbox screenshot" loading="lazy"></figure></section>
-    ${props.setup ? renderSetupGuide(props.setup) : ''}
-  `;
-}
-
-function renderDashboardHeader(props: any) {
-  const summary = props.refreshSummary ? ` · ${props.refreshSummary.status === 'no_change' ? 'no GitHub changes' : `${props.refreshSummary.candidateCount ?? 0} found · ${props.refreshSummary.resolvedCount ?? 0} resolved`}` : '';
-  return `<div class="header-extra"><div><p class="eyebrow">${escapeHtml(props.signedInAs)} · ${props.freshness.status}</p><p class="header-meta">Checked ${escapeHtml(formatDateTime(props.freshness.lastScanAt))}${summary}${props.rateLimit ? ` · rate limit ${props.rateLimit.remaining}` : ''}</p></div><div class="header-actions"><a class="button icon-button" href="/settings" aria-label="Settings" title="Settings"><svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.25a3.75 3.75 0 1 1 0 7.5 3.75 3.75 0 0 1 0-7.5Zm0-5 1.12 2.35 2.52.36-1.82 1.78.43 2.51L12 9.07l-2.25 1.18.43-2.51-1.82-1.78 2.52-.36L12 3.25Z"/><path d="M4.5 13.2v-2.4l2.1-.75c.18-.56.41-1.1.7-1.6L6.35 6.4l1.7-1.7 2.05.95c.5-.28 1.03-.52 1.6-.7l.75-2.1h2.4l.75 2.1c.56.18 1.1.42 1.6.7l2.05-.95 1.7 1.7-.95 2.05c.28.5.52 1.04.7 1.6l2.1.75v2.4l-2.1.75c-.18.56-.42 1.1-.7 1.6l.95 2.05-1.7 1.7-2.05-.95c-.5.29-1.04.52-1.6.7l-.75 2.1h-2.4l-.75-2.1a8.2 8.2 0 0 1-1.6-.7l-2.05.95-1.7-1.7.95-2.05a8.2 8.2 0 0 1-.7-1.6l-2.1-.75Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></a><form method="post" action="/refresh" data-refresh-form><button class="button primary" data-idle-label="Manual refresh">Manual refresh</button><span class="refresh-pending-note" role="status" aria-live="polite" hidden>Refreshing...</span></form></div></div>`;
-}
-
-function renderSettingsHeader(props: any) {
-  return `<div class="header-extra"><div><p class="eyebrow">${escapeHtml(props.signedInAs)}</p><strong>Settings</strong><p class="header-meta">Tune your inbox rhythm.</p></div><a class="button ghost" href="/dashboard">Inbox</a></div>`;
-}
-
-function renderRuns(props: any) {
-  const runs = props.runs ?? props;
-  const freshness = props.freshness;
-  const rate = props.rateLimit;
-  const queue = props.queue;
-  const notice = props.notice ? `<p class="setup-status${props.notice.kind === 'success' ? ' ready' : ''}" role="status">${escapeHtml(props.notice.message)}</p>` : '';
-  return `<section class="section panel">${notice}<p class="eyebrow">Operations</p><h1>Runs</h1><div class="stat-list">${freshness ? renderStat('Freshness', 0).replace('<strong>0</strong>', `<strong>${escapeHtml(capitalize(freshness.status))}</strong>`) : ''}${freshness ? `<p class="stat"><span>Last checked</span><strong>${escapeHtml(formatDateTime(freshness.lastScanAt))}</strong></p>` : ''}${rate ? `<p class="stat"><span>Rate limit</span><strong>${rate.remaining}</strong></p><p class="stat"><span>Rate reset</span><strong>${escapeHtml(formatDateTime(rate.resetAt))}</strong></p>` : '<p class="stat"><span>Rate limit</span><strong>not yet</strong></p>'}${queue ? `<p class="stat"><span>Queue backlog</span><strong>${queue.brokerPending ?? queue.pending}</strong></p><p class="stat"><span>Queue source</span><strong>${escapeHtml(queue.source ?? 'd1')}</strong></p><p class="stat"><span>Queue failed</span><strong>${queue.failed}</strong></p><p class="stat"><span>DLQ</span><strong>${escapeHtml(queue.dlq)}</strong></p><p class="stat"><span>DLQ count</span><strong>${queue.dlqCount ?? 'unknown'}</strong></p>` : ''}</div><table><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Candidates</th><th>Processed</th><th>Error</th></tr></thead><tbody>${runs.map((r: any) => `<tr><td>${escapeHtml(formatDateTime(r.started_at))}</td><td>${r.trigger}</td><td><span class="badge">${r.status}</span></td><td>${r.candidate_count}</td><td>${r.processed_count ?? 0}</td><td>${escapeHtml(r.error ?? '')}</td></tr>`).join('')}</tbody></table></section>`;
-}
-
-function renderItemPage(props: any) {
-  if (!props.item) return '<section class="section panel"><p class="eyebrow">Inbox card</p><h1>Not found</h1><div class="empty-state"><strong>Card not found.</strong><p>This item may have been resolved or ignored.</p></div><p><a class="button ghost" href="/dashboard">Back to inbox</a></p></section>';
-  return `<section class="section panel"><div class="section-head"><div><p class="eyebrow">Inbox card</p><h1>GitHub loop</h1><p class="muted">Open this card in its own tab, share the Sunrise URL, or continue through to GitHub.</p></div><a class="button ghost" href="/dashboard">Back to inbox</a></div><div class="item-list">${renderItem(props.item, props.signedInAs)}</div></section>`;
-}
-
-function renderDashboard(props: any) {
-  const summary = props.refreshSummary ? `<section class="refresh-summary ${props.refreshSummary.status === 'no_change' ? 'quiet' : ''}"><strong>${props.refreshSummary.status === 'no_change' ? 'No GitHub changes.' : 'Collected GitHub.'}</strong><span>${props.refreshSummary.status === 'no_change' ? 'The current snapshot matches the previous refresh.' : `${props.refreshSummary.candidateCount ?? 0} found · ${props.refreshSummary.resolvedCount ?? 0} resolved`}</span></section>` : '';
-  return `${summary}${props.notice ? `<section class="setup-status ready">${escapeHtml(props.notice.message)}</section>` : ''}
-  ${props.usingFixtures ? '<section class="setup-status"><strong>Test fixture mode is enabled.</strong> Dashboard items are sample data, not your live GitHub account. Remove TEST_GITHUB_FIXTURES in Cloudflare to use real GitHub data.</section>' : ''}
-  <div class="dashboard-layout"><section class="inbox panel"><div class="item-list inbox-list">${renderGroupedItems(props.items, props.signedInAs)}</div>${renderPagination(props.pagination)}</section><aside class="marginalia" aria-label="Dashboard statistics"><section class="panel stat-card unresolved-card"><p class="eyebrow">Unresolved on GitHub</p><div class="stat-list">${renderUnresolvedLinks(props.unresolvedLinks)}</div></section><section class="panel stat-card"><p class="eyebrow">Counts</p><div class="stat-list">${renderStat('PRs', props.counts.pullRequests)}${renderStat('Issues', props.counts.issues)}${renderStat('My PRs · own repos', props.counts.myPrsOwnRepos)}${renderStat('My PRs · elsewhere', props.counts.myPrsOtherRepos)}${renderStat('PRs to my repos', props.counts.prsInMyRepos)}</div></section></aside></div>`;
-}
-
-function renderGroupedItems(items: GitHubActionItem[], ownerLogin: string) {
-  if (!items.length) return '<div class="empty-state"><strong>All clear.</strong><p>No unresolved GitHub loops are in your inbox right now.</p></div>';
-  const groups = new Map<string, GitHubActionItem[]>();
-  for (const item of items) {
-    const label = timeSectionLabel(item.updatedAt);
-    groups.set(label, [...(groups.get(label) ?? []), item]);
-  }
-  return ['Today', 'Yesterday', 'Earlier this week', 'Older', 'Earlier'].filter((label) => groups.has(label)).map((label) => `<section class="time-section"><h2>${label}</h2>${groups.get(label)!.map((item) => renderItem(item, ownerLogin)).join('')}</section>`).join('');
-}
-
-function timeSectionLabel(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Earlier';
-  const now = new Date();
-  const start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const item = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-  const days = Math.floor((start - item) / 86400000);
-  if (days <= 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return 'Earlier this week';
-  return 'Older';
-}
-
-function renderPagination(p: any) {
-  if (!p || p.totalPages <= 1) return '';
-  const prev = p.hasPrevious ? `<a class="button ghost" href="/dashboard?page=${p.page - 1}">Newer</a>` : '<span></span>';
-  const next = p.hasNext ? `<a class="button primary" href="/dashboard?page=${p.page + 1}">Older</a>` : '<span></span>';
-  return `<nav class="pagination" aria-label="Inbox pagination">${prev}<span class="muted">Page ${p.page} of ${p.totalPages} · ${p.totalItems} events · ${p.pageSize} per page</span>${next}</nav>`;
-}
-
-function renderChangelog(props: any) {
-  return `<section class="section panel"><div class="section-head"><div><p class="eyebrow">What changed</p><h1>Changelog</h1><p class="muted">Privacy-preserving release notes for you and your coding agent. Sunrise does not register this deployment upstream.</p></div><a class="button ghost" href="/settings">Settings</a></div><div class="config-card"><p><span>Current version</span><code>${escapeHtml(props.version?.version ?? 'unknown')}</code></p><p><span>Upgrade contract</span><code>${escapeHtml(props.version?.upgradeContract ?? 'docs/agent-upgrade-contract.md')}</code></p></div><pre class="changelog-text">${escapeHtml(props.changelog ?? '')}</pre></section>`;
-}
-
-function renderSettings(settings: UserSettings, props: any = {}) {
-  const options = [25, 50, 100].map((n) => `<option value="${n}"${settings.inboxPageSize === n ? ' selected' : ''}>${n} events</option>`).join('');
-  const update = props.update ?? {};
-  const version = props.version ?? SUNRISE_VERSION;
-  return `<section class="section panel settings-panel"><div class="section-head"><div><p class="eyebrow">Preferences</p><h1>Settings</h1><p class="muted">Keep Sunrise quiet, skimmable, and tuned to how much GitHub you want at once.</p></div></div><form method="post" action="/settings" class="settings-form"><label><span>Inbox page size</span><select name="inboxPageSize">${options}</select></label><p class="muted">Pagination starts after this many events. Default is 50.</p><label class="checkbox-row"><input type="checkbox" name="includeSubscribedNotifications"${settings.includeSubscribedNotifications ? ' checked' : ''}><span>Include watched-repository notifications</span></label><p class="muted">Off by default. Mentions, assignments, review requests, authored threads, invitations, owned-repo PRs, workflow failures, and security alerts still appear.</p><button class="button primary">Save settings</button></form></section><section class="section panel"><div class="section-head"><div><p class="eyebrow">Sunrise version</p><h2>${update.hasUnseenChangelog ? 'What changed' : 'Up to date locally'}</h2><p class="muted">Current version ${escapeHtml(update.currentVersion ?? version.version)}. No deployment telemetry is sent upstream.</p></div><a class="button primary" href="/changelog">View changelog</a></div><div class="config-card"><p><span>Agent upgrade contract</span><code>${escapeHtml(version.upgradeContract)}</code></p><p><span>Upstream</span><code>${escapeHtml(version.upstream)}</code></p></div></section>`;
-}
-
-function renderStat(label: string, value: number) {
-  return `<p class="stat"><span>${escapeHtml(label)}</span><strong>${value}</strong></p>`;
-}
-
-function renderUnresolvedLinks(rows: Array<{ label: string; count: number; href: string; query?: string }> = []) {
-  if (!rows.length) return '<div class="empty-state compact"><strong>All clear.</strong><p>Nothing unresolved in the current GitHub snapshot.</p></div>';
-  return rows.map((row) => `<a class="stat unresolved-link" href="${escapeHtml(row.href)}" target="_blank" rel="noreferrer" title="${escapeHtml(row.query ? `Opens GitHub: ${row.query}` : 'Opens GitHub')}"><span>${escapeHtml(row.label)}<em>Open in GitHub</em></span><strong>${row.count} ↗</strong></a>`).join('');
-}
-
-function renderMetric(label: string, value: number) {
-  return `<div class="metric panel"><span>${escapeHtml(label)}</span><strong>${value}</strong></div>`;
-}
-
-function renderDesignLanguage() {
-  const sampleItem: GitHubActionItem = {
-    id: 'design-sample',
-    canonicalSubjectKey: 'design:sample',
-    kind: 'authored_pr_failing',
-    title: 'Authored PR has failing checks',
-    repo: 'owner/repo',
-    url: '#',
-    updatedAt: new Date().toISOString(),
-    reason: 'The item row, chips, title, reason, and action copy reuse the dashboard renderer.',
-    suggestedAction: 'Fix failing checks',
-    evidence: { checks: 'failure' },
-    source: 'pulls',
-  };
-  return `<header class="masthead panel"><div><p class="eyebrow">Design language</p><h1>Interface kit</h1><p class="muted">This page is public and reuses the same components as the product UI, so changes to originals update here too.</p></div><a class="button ghost" href="/">Back home</a></header>
-  <section class="metrics">${renderMetric('Assigned', 3)}${renderMetric('Mentioned', 7)}${renderMetric('Authored PRs', 12)}${renderMetric('Reviews', 2)}</section>
-  <section class="section panel"><div class="section-head"><div><p class="eyebrow">Type</p><h2>Warm, crisp, operational</h2></div><span class="badge">public</span></div><p class="muted">Fraunces gives Sunrise its personality. IBM Plex Sans keeps dense dashboard text readable. IBM Plex Mono marks system labels, chips, code, and table headers.</p><p class="actions"><a class="button primary" href="#">Primary action</a><button class="button ghost">Secondary action</button><button class="button quiet">Quiet action</button></p></section>
-  <section class="section panel"><div class="section-head"><div><p class="eyebrow">Action item</p><h2>Dashboard row</h2></div><span class="badge">example</span></div><div class="item-list">${renderItem(sampleItem)}</div></section>
-  <section class="section panel"><div class="section-head"><div><p class="eyebrow">Setup pattern</p><h2>First-boot cards</h2></div></div><div class="deploy-card"><div><strong>Start with one-click deploy</strong><p>Cards, copy, buttons, and code styling mirror onboarding.</p></div><a class="button primary" href="#">Deploy to Cloudflare</a></div><div class="config-card"><p><span>Homepage URL</span><code>https://sunrise.example.workers.dev</code></p><p><span>Callback URL</span><code>https://sunrise.example.workers.dev/callback</code></p></div></section>
-  <section class="section panel"><div class="section-head"><div><p class="eyebrow">Table</p><h2>Runs table</h2></div></div><table><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Candidates</th></tr></thead><tbody><tr><td>2026-05-01</td><td>manual</td><td><span class="badge">succeeded</span></td><td>18</td></tr></tbody></table></section>`;
-}
-
-function renderItem(item: GitHubActionItem, ownerLogin = '') {
-  const when = formatInboxTime(item.updatedAt);
-  const chips = [itemTypeLabel(item), itemRelationshipLabel(item, ownerLogin)].filter(Boolean).map((chip) => `<span class="chip">${escapeHtml(chip)}</span>`).join('');
-  const repoOwner = item.repo.split('/')[0] || 'github';
-  const repoChip = item.repo ? `<a class="chip repo-chip" href="https://github.com/${escapeHtml(item.repo)}" target="_blank" rel="noreferrer">${escapeHtml(item.repo)} ↗</a>` : '';
-  const author = item.evidence?.author;
-  const authorAvatar = author ? `<img class="author-avatar" src="https://github.com/${escapeHtml(author)}.png?size=40" alt="" loading="lazy">` : '';
-  const check = item.evidence?.checks ? `<span class="check-status ${escapeHtml(item.evidence.checks)}" title="Checks ${escapeHtml(item.evidence.checks)}" aria-label="Checks ${escapeHtml(item.evidence.checks)}"></span>` : '';
-  return `<article class="item" id="item-${escapeHtml(item.id)}"><a class="item-time" href="/items/${encodeURIComponent(item.id)}" title="Open this card" aria-label="Open card updated ${escapeHtml(when.date)} ${escapeHtml(when.time)}"><time datetime="${escapeHtml(item.updatedAt)}"><span>${escapeHtml(when.date)}</span><strong>${escapeHtml(when.time)}</strong></time></a><div class="item-main"><div class="item-topline"><div class="item-signals"><span class="type-icon" aria-hidden="true">${escapeHtml(itemIcon(item))}</span><img class="repo-avatar" src="https://github.com/${escapeHtml(repoOwner)}.png?size=40" alt="" loading="lazy">${authorAvatar}${check}</div><div class="chips">${chips}${repoChip}</div></div><a class="item-title" href="${item.url}">${escapeHtml(item.title)}</a><p>${escapeHtml(item.reason)}</p><p class="action">${escapeHtml(item.suggestedAction)} <span class="relative-time">· updated ${escapeHtml(relativeTime(item.updatedAt))}</span></p></div></article>`;
-}
-
-function itemTypeLabel(item: GitHubActionItem) {
-  if (isPullRequestItem(item)) return 'Pull request';
-  if (isIssueItem(item)) return 'Issue';
-  if (item.kind.includes('discussion')) return 'Discussion';
-  return item.kind.replaceAll('_', ' ');
-}
-
-function itemIcon(item: GitHubActionItem) {
-  if (isPullRequestItem(item)) return '⑂';
-  if (isIssueItem(item)) return '○';
-  if (item.kind.includes('discussion')) return '◌';
-  if (item.kind === 'workflow_failure') return '×';
-  return '•';
-}
-
-function relativeTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  const now = new Date();
-  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const itemDay = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-  const days = Math.max(0, Math.floor((today - itemDay) / 86400000));
-  if (days === 0) return 'today';
-  if (days === 1) return 'yesterday';
-  return `${days}d ago`;
-}
-
-function itemRelationshipLabel(item: GitHubActionItem, ownerLogin = '') {
-  if (isAuthoredPrItem(item)) return isOwnRepoItem(item, ownerLogin) ? 'My PR · own repo' : 'My PR · other repo';
-  if (item.kind === 'repo_pr') return 'Other person’s PR · my repo';
-  if (item.kind === 'review_requested') return 'Review requested';
-  if (item.kind === 'mention') return 'Mentioned you';
-  if (item.kind === 'assigned') return 'Assigned to you';
-  if (item.kind === 'notification' && item.evidence?.notificationReason === 'subscribed') return 'Watched repo';
-  if (item.kind === 'maintenance') return 'Created by me';
-  return item.source;
-}
-
-function formatInboxTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return { date: value, time: '' };
-  return {
-    date: date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' }),
-    time: date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }),
-  };
-}
-
-function formatDateTime(value: string | null) {
-  if (!value) return 'not yet';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
-}
-
-function capitalize(value: string) {
-  return value ? value[0].toUpperCase() + value.slice(1) : value;
-}
-
-function renderSetupGuide(setup: SetupDiagnostics) {
-  const deployUrl = 'https://deploy.workers.cloudflare.com/?url=https://github.com/adewale/sunrise&paid=true';
-  const dashboardPath = 'Workers & Pages → sunrise → Settings → Variables and Secrets';
-  const steps = [
-    ['Deploy your own copy', 'Use the Deploy to Cloudflare button. Cloudflare forks the repo, provisions D1 and Queues from wrangler.jsonc, runs the build, and enables deploys from your fork.'],
-    ['Create a GitHub OAuth app', `Use Homepage URL ${setup.origin} and Authorization callback URL ${setup.callbackUrl}.`],
-    ['Add secrets in Cloudflare', `Open ${dashboardPath}. Set GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, OWNER_LOGIN, and SESSION_SECRET.`],
-    ['Reload this page', 'The checklist verifies this instance configuration against Cloudflare, D1, Queues, and GitHub where possible.'],
-    ['Sign in and refresh', 'Sign in as the configured owner, then use Manual refresh to populate the first dashboard snapshot.'],
-  ];
-  const status = setup.ready ? '<p class="setup-status ready">Configuration looks ready. Sign in to scan GitHub.</p>' : '<p class="setup-status">Setup needs attention. Fix failing checks below, then reload.</p>';
-  return `<section class="panel setup"><div class="section-head"><div><p class="eyebrow">First boot</p><h2>Setup checklist</h2></div><span class="badge">${setup.ready ? 'ready' : 'action needed'}</span></div>${status}${renderSetupChecks(setup.checks)}<div class="deploy-card"><div><strong>Start with one-click deploy</strong><p>Best for most users: no local CLI required for the first deployment.</p></div><a class="button primary" href="${deployUrl}">Deploy to Cloudflare</a></div><div class="config-card"><p><span>Homepage URL</span><code>${escapeHtml(setup.origin)}</code></p><p><span>Callback URL</span><code>${escapeHtml(setup.callbackUrl)}</code></p></div><ol class="setup-steps">${steps.map(([title, copy], index) => `<li><span class="step-number">${index + 1}</span><div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p></div></li>`).join('')}</ol><p class="muted">Sunrise should never ask users to send tokens to a hosted service. OAuth secrets and GitHub data stay in the deployer’s Cloudflare account.</p></section>`;
-}
-
-function renderSetupChecks(checks: SetupCheck[]) {
-  return `<div class="setup-checks">${checks.map((check) => `<article class="setup-check ${check.status}"><span class="check-dot">${check.status === 'pass' ? '✓' : check.status === 'warn' ? '!' : '×'}</span><div><strong>${escapeHtml(check.label)}</strong><p>${escapeHtml(check.message)}</p>${check.fix ? `<p class="fix">${escapeHtml(check.fix)}</p>` : ''}</div></article>`).join('')}</div>`;
+function renderInertiaRoot(page: PageObject) {
+  const props: any = page.props ?? {};
+  const Component = pageComponents[page.component];
+  const body = Component ? (<Component {...props} />).toString() : '<section class="section panel"><h1>Page not found</h1></section>';
+  const headerExtra = page.component === 'Dashboard'
+    ? (<DashboardHeader {...props} />).toString()
+    : page.component === 'Settings' || page.component === 'Changelog'
+      ? (<SettingsHeader {...props} />).toString()
+      : '';
+  return documentHtml(body, headerExtra, `<script data-page="app" type="application/json">${serializePage(page)}</script>`);
 }
 
 function html(body: string, status = 200, headerExtra = '') {
   return new Response(documentHtml(body, headerExtra), { status, headers: { 'content-type': 'text/html; charset=utf-8' } });
 }
 
-function documentHtml(body: string, headerExtra = '') {
-  return `<!doctype html><html><head><title>Sunrise</title><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,600..900,60,1&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet"><script>${themeScript()}</script><script type="module" src="/assets/sunrise-client.js"></script><style>${designCss()}</style></head><body><a class="skip-link" href="#content">Skip to content</a><header class="site-header"><a class="brand" href="/">${renderBrandMark()}<span>Sunrise</span></a>${headerExtra}<button class="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false" title="Toggle dark mode"><span class="sun-icon" aria-hidden="true"></span><span class="moon-icon" aria-hidden="true"></span></button></header><main id="content">${body}</main></body></html>`;
+function documentHtml(body: string, headerExtra = '', afterMain = '') {
+  return `<!doctype html><html><head><title>Sunrise</title><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,600..900,60,1&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet"><script>${themeScript()}</script><script type="module" src="/assets/sunrise-inertia-client.js"></script><style>${designCss()}</style></head><body><a class="skip-link" href="#content">Skip to content</a><header class="site-header"><a class="brand" href="/">${renderBrandMark()}<span>Sunrise</span></a>${headerExtra}<button class="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false" title="Toggle dark mode"><span class="sun-icon" aria-hidden="true"></span><span class="moon-icon" aria-hidden="true"></span></button></header><main id="content">${body}</main><div id="app" hidden></div>${afterMain}</body></html>`;
 }
 
 function renderFaviconSvg() {
@@ -756,8 +586,8 @@ function themeScript() {
   return `(function(){var key='sunrise-theme';var saved=localStorage.getItem(key);var theme=saved||((matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light');var h=new Date().getHours();document.documentElement.dataset.daypart=h<6?'night':h<11?'morning':h<17?'day':h<21?'evening':'night';function apply(t,animate){var root=document.documentElement;if(animate){root.classList.add('theme-changing',t==='dark'?'theme-to-dark':'theme-to-light');clearTimeout(window.__sunriseThemeTimer);window.__sunriseThemeTimer=setTimeout(function(){root.classList.remove('theme-changing','theme-to-dark','theme-to-light');},1500);}root.dataset.theme=t;var b=document.querySelector('.theme-toggle');if(b)b.setAttribute('aria-pressed',String(t==='dark'));}document.documentElement.dataset.theme=theme;addEventListener('DOMContentLoaded',function(){apply(theme,false);var b=document.querySelector('.theme-toggle');if(!b)return;b.addEventListener('click',function(){var next=document.documentElement.dataset.theme==='dark'?'light':'dark';apply(next,true);localStorage.setItem(key,next);});});})();`;
 }
 
-function sunriseClientBundle() {
-  return `(() => {\n  function shouldHandle(anchor) {\n    return anchor && anchor.origin === location.origin && !anchor.target && !anchor.hasAttribute('download') && !anchor.href.includes('/login') && !anchor.href.includes('/callback') && !anchor.href.includes('/favicon.svg');\n  }\n  function shouldHandleForm(form) {\n    return form && form.action && new URL(form.action, location.href).origin === location.origin && !form.target && !form.hasAttribute('data-native');\n  }\n  function setRefreshPending(form) {\n    if (!form || !form.matches('[data-refresh-form]')) return () => {};\n    const button = form.querySelector('button');\n    const note = form.querySelector('.refresh-pending-note');\n    const idle = button?.getAttribute('data-idle-label') || button?.textContent || 'Manual refresh';\n    form.classList.add('is-refresh-pending');\n    if (button) {\n      button.setAttribute('aria-busy', 'true');\n      button.textContent = 'Refreshing...';\n    }\n    if (note) note.hidden = false;\n    const clear = () => {\n      form.classList.remove('is-refresh-pending');\n      if (button) {\n        button.removeAttribute('aria-busy');\n        button.textContent = idle;\n      }\n      if (note) note.hidden = true;\n    };\n    const timer = setTimeout(clear, 15000);\n    return () => { clearTimeout(timer); clear(); };\n  }\n  async function renderUrl(url, push) {\n    const res = await fetch(url, { headers: { Accept: 'text/html' } });\n    if (!res.ok) throw new Error('Page unavailable');\n    const text = await res.text();\n    const doc = new DOMParser().parseFromString(text, 'text/html');\n    document.title = doc.title;\n    document.querySelector('.site-header')?.replaceWith(doc.querySelector('.site-header'));\n    document.querySelector('#content')?.replaceWith(doc.querySelector('#content'));\n    if (push) history.pushState({}, '', res.url || url);\n    dispatchEvent(new Event('sunrise:navigated'));\n  }\n  async function submit(form) {\n    const clearPending = setRefreshPending(form);\n    try {\n      const method = (form.method || 'GET').toUpperCase();\n      const action = new URL(form.action || location.href, location.href).toString();\n      const body = method === 'GET' ? undefined : new FormData(form);\n      const res = await fetch(action, { method, body, headers: { Accept: 'text/html' } });\n      await renderUrl(res.url || action, true);\n    } finally {\n      clearPending();\n    }\n  }\n  document.addEventListener('click', (event) => {\n    const anchor = event.target.closest && event.target.closest('a[href]');\n    if (!shouldHandle(anchor)) return;\n    event.preventDefault();\n    renderUrl(anchor.href, true).catch(() => {});\n  });\n  document.addEventListener('submit', (event) => {\n    const form = event.target;\n    if (!shouldHandleForm(form)) return;\n    event.preventDefault();\n    submit(form).catch(() => {});\n  });\n  addEventListener('popstate', () => renderUrl(location.href, false).catch(() => {}));\n})();`;
+function inertiaClientBundle() {
+  return `(() => {\n  const version = 'sunrise-1';\n  function shouldHandle(anchor) {\n    return anchor && anchor.origin === location.origin && !anchor.target && !anchor.hasAttribute('download') && !anchor.href.includes('/login') && !anchor.href.includes('/callback') && !anchor.href.includes('/favicon.svg');\n  }\n  function shouldHandleForm(form) {\n    return form && form.action && new URL(form.action, location.href).origin === location.origin && !form.target && !form.hasAttribute('data-native');\n  }\n  function setRefreshPending(form) {\n    if (!form || !form.matches('[data-refresh-form]')) return () => {};\n    const button = form.querySelector('button');\n    const note = form.querySelector('.refresh-pending-note');\n    const idle = button?.getAttribute('data-idle-label') || button?.textContent || 'Manual refresh';\n    form.classList.add('is-refresh-pending');\n    if (button) {\n      button.setAttribute('aria-busy', 'true');\n      button.textContent = 'Refreshing...';\n    }\n    if (note) note.hidden = false;\n    const clear = () => {\n      form.classList.remove('is-refresh-pending');\n      if (button) {\n        button.removeAttribute('aria-busy');\n        button.textContent = idle;\n      }\n      if (note) note.hidden = true;\n    };\n    const timer = setTimeout(clear, 15000);\n    return () => { clearTimeout(timer); clear(); };\n  }\n  async function renderUrl(url, push) {\n    const res = await fetch(url, { headers: { 'X-Inertia': 'true', 'X-Inertia-Version': version, Accept: 'application/json' } });\n    if (!res.ok || res.status === 409) throw new Error('Navigation unavailable');\n    const page = await res.json();\n    const full = await fetch(page.url || url, { headers: { Accept: 'text/html' } });\n    if (!full.ok) throw new Error('Page unavailable');\n    const text = await full.text();\n    const doc = new DOMParser().parseFromString(text, 'text/html');\n    document.title = doc.title;\n    document.querySelector('.site-header')?.replaceWith(doc.querySelector('.site-header'));\n    document.querySelector('#content')?.replaceWith(doc.querySelector('#content'));\n    const oldPage = document.querySelector('script[data-page=\"app\"]');\n    const newPage = doc.querySelector('script[data-page=\"app\"]');\n    if (oldPage && newPage) oldPage.textContent = newPage.textContent;\n    if (push) history.pushState({}, '', page.url || url);\n    dispatchEvent(new Event('sunrise:navigated'));\n  }\n  async function submit(form) {\n    const clearPending = setRefreshPending(form);\n    try {\n      const method = (form.method || 'GET').toUpperCase();\n      const action = new URL(form.action || location.href, location.href).toString();\n      const body = method === 'GET' ? undefined : new FormData(form);\n      const res = await fetch(action, { method, body, headers: { Accept: 'text/html' } });\n      await renderUrl(res.url || action, true);\n    } finally {\n      clearPending();\n    }\n  }\n  document.addEventListener('click', (event) => {\n    const anchor = event.target.closest && event.target.closest('a[href]');\n    if (!shouldHandle(anchor)) return;\n    event.preventDefault();\n    renderUrl(anchor.href, true).catch(() => {});\n  });\n  document.addEventListener('submit', (event) => {\n    const form = event.target;\n    if (!shouldHandleForm(form)) return;\n    event.preventDefault();\n    submit(form).catch(() => {});\n  });\n  addEventListener('popstate', () => renderUrl(location.href, false).catch(() => {}));\n})();`;
 }
 
 function designCss() {

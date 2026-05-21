@@ -19,9 +19,10 @@ This audit compares `specs/sunrise-github-dashboard-spec.md` with the current im
 - Queue consumer config now includes explicit batch size, batch timeout, retry count, and DLQ name.
 - Queue processing increments `scan_runs.processed_count` for processed/ignored changes.
 - Hono routes are the app surface.
-- `@hono/inertia` is wired into page rendering for landing, setup, design, dashboard, settings, and runs pages.
-- An Inertia client source exists (`src/client.tsx`) with React page placeholders and a served progressive navigation bundle at `/assets/sunrise-inertia-client.js`.
-- `@hono/inertia/vite` configuration and `app/pages.gen.ts` constrain page names for `c.render(...)`.
+- `@hono/inertia` is wired into page rendering for landing, setup, design, dashboard, settings, changelog, runs, and item pages.
+- Pages render with Hono's built-in JSX runtime (`hono/jsx`), not React. Page components live in `app/pages/*.tsx`; the `rootView` SSRs them to an HTML string, wraps them in the document shell, and embeds the page object as `<script data-page="app">` via `serializePage`.
+- A hand-rolled progressive navigation bundle is served at `/assets/sunrise-inertia-client.js`. It speaks the `X-Inertia` request/response protocol and swaps the header, `#content`, and the page-object script. There is no React, no client-side hydration, and no Vite build.
+- `app/pages.gen.ts` constrains page names for `c.render(...)`.
 - Routes still provide JSON/props views for debugging/agent inspection (`?json` or `Accept: application/json` where applicable).
 - D1 indexes exist for the main dashboard/action-item, scan-run, session-expiry, ignored-item, and GitHub-change predicates.
 - `wrangler types` is part of verification.
@@ -55,9 +56,10 @@ These are not treated as bugs; the spec should be read with these product decisi
 
 ### UI / Inertia
 
-- The served client bundle is progressive and preserves current server-rendered HTML; full React hydration of the visible UI is not complete yet.
-- React page files now render the visible page bodies with JSX. Header/root shell rendering and some legacy helper renderers still live in `src/app.ts`; these should be removed once the header/root shell are also componentized.
-- Vite can build `src/client.tsx`, but Worker asset serving is still handled by the explicit `/assets/sunrise-inertia-client.js` route rather than Cloudflare static assets.
+- Rendering is server-side only via `hono/jsx`; there is intentionally no client-side hydration. The progressive navigation bundle re-fetches and swaps server-rendered HTML, so the UI degrades gracefully without JavaScript.
+- Page bodies, shared components (item rows, stats, setup checks), and the page-specific header fragments are single-source `hono/jsx` components under `app/pages/`. The duplicate string-template renderers were removed.
+- The document shell (CSS, fonts, theme script, brand mark) remains a string template in `src/app.tsx` by design: it is a large static blob, and putting the CSS through JSX would force escaping of `>` combinators. Only `documentHtml`/`escapeHtml`/asset helpers stay as strings there.
+- The client bundle is served from an explicit `/assets/sunrise-inertia-client.js` route rather than Cloudflare static assets.
 
 ### Runs / operations
 
@@ -111,9 +113,8 @@ Still missing or incomplete from the larger spec:
 
 ## Recommended next order
 
-1. Finish moving the header/root shell and remaining legacy render helpers out of `src/app.ts`.
-2. Verify deploy-button provisioning with the new DLQ config.
-3. Capture `EXPLAIN QUERY PLAN` evidence for dashboard queries.
-4. Run the fixture capture script against a real account, redact payloads, and label 50 candidates.
-5. Add full Check Runs API coverage and semantic verification-command detection.
-6. Document endpoint-by-endpoint behavior under default scopes vs `repo` scopes.
+1. Verify deploy-button provisioning with the new DLQ config.
+2. Capture `EXPLAIN QUERY PLAN` evidence for dashboard queries.
+3. Run the fixture capture script against a real account, redact payloads, and label 50 candidates.
+4. Add full Check Runs API coverage and semantic verification-command detection.
+5. Document endpoint-by-endpoint behavior under default scopes vs `repo` scopes.

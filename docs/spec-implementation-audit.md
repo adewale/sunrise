@@ -56,10 +56,10 @@ These are not treated as bugs; the spec should be read with these product decisi
 
 ### UI / Inertia
 
-- Rendering is server-side only via `hono/jsx`; there is intentionally no client-side hydration. The progressive navigation bundle re-fetches and swaps server-rendered HTML, so the UI degrades gracefully without JavaScript.
+- Rendering is server-side only via `hono/jsx`; there is intentionally no client-side hydration. The progressive navigation bundle does a single `text/html` fetch per navigation and swaps `.site-header`/`#content`, so the UI degrades gracefully without JavaScript. (It does not client-render from the X-Inertia JSON, since there are no browser-side components; an extra X-Inertia round-trip would be wasted work.)
 - Page bodies, shared components (item rows, stats, setup checks), and the page-specific header fragments are single-source `hono/jsx` components under `app/pages/`. The duplicate string-template renderers were removed.
 - The document shell (CSS, fonts, theme script, brand mark) remains a string template in `src/app.tsx` by design: it is a large static blob, and putting the CSS through JSX would force escaping of `>` combinators. Only `documentHtml`/`escapeHtml`/asset helpers stay as strings there.
-- The client bundle is served from an explicit `/assets/sunrise-inertia-client.js` route rather than Cloudflare static assets.
+- The client bundle is served from an explicit `/assets/sunrise-inertia-client.js` route rather than Cloudflare static assets. It is cache-busted with a content hash (`?v=<hash>`) and served `immutable`, so deploys take effect immediately without serving stale JS — the same problem `vite-ssr-components` solves via `manifest.json`, done here without a Vite build.
 
 ### Runs / operations
 

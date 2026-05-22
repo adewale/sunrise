@@ -28,15 +28,25 @@ describe('Sunrise app routes', () => {
     expect(html).not.toContain('Sign in with GitHub');
   });
 
-  it('serves a progressive Inertia client bundle', async () => {
+  it('serves a progressive client navigation bundle that fetches each page once', async () => {
     const res = await app.request('/assets/sunrise-inertia-client.js', {}, { DB: createMemoryDb() } as unknown as Env);
     const js = await res.text();
     expect(res.headers.get('content-type')).toContain('text/javascript');
-    expect(js).toContain('X-Inertia');
+    expect(res.headers.get('cache-control')).toContain('immutable');
     expect(js).toContain('history.pushState');
     expect(js).toContain("document.addEventListener('submit'");
+    // Single-fetch navigation: no redundant X-Inertia JSON round-trip before the HTML swap.
+    expect(js).not.toContain('X-Inertia');
     expect(js).not.toContain('location.reload');
     expect(js).not.toContain('location.href =');
+    expect((js.match(/await fetch\(/g) ?? []).length).toBe(2);
+  });
+
+  it('cache-busts the client bundle with a content hash in the document', async () => {
+    const db = createMemoryDb();
+    await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
+    const html = await (await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env)).text();
+    expect(html).toMatch(/\/assets\/sunrise-inertia-client\.js\?v=[a-z0-9]+/);
   });
 
   it('serves a sunrise inbox favicon with light and dark variants', async () => {

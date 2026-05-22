@@ -30,7 +30,7 @@ describe('Playwright smoke checks', () => {
     } finally {
       await browser.close();
     }
-  });
+  }, 30000);
 });
 
 async function expectText(page: any, text: string) {

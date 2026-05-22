@@ -63,6 +63,7 @@ function select(store: Record<string, Row[]>, sql: string, v: any[]) {
   if (/FROM rate_limit_snapshots/i.test(normalized)) return [...store.rate_limit_snapshots].sort(desc('captured_at')).slice(0, 1);
   if (/FROM action_items/i.test(normalized)) {
     let rows = [...store.action_items].filter((r) => r.ignored_at == null);
+    if (/WHERE id = \?/i.test(normalized)) rows = rows.filter((r) => r.id === v[0]);
     if (/WHERE kind IN/i.test(normalized)) rows = rows.filter((r) => v.includes(r.kind));
     return rows.sort(desc('updated_at')).slice(0, normalized.includes('LIMIT 500') ? 500 : 50);
   }

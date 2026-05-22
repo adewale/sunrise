@@ -62,7 +62,7 @@ function checkDot(item: ActionItem) {
   return <span class={`check-status ${checks}`} title={`Checks ${checks}`} aria-label={`Checks ${checks}`} />;
 }
 
-export function formatInboxTime(value: string) {
+function formatInboxTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return { date: value, time: '' };
   return { date: date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' }), time: date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) };

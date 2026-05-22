@@ -173,6 +173,31 @@ describe('Sunrise app routes', () => {
     expect(page.props.items[0].title).toBe('Review the launch PR');
   });
 
+  it('renders a single item card and handles a missing item', async () => {
+    const db = createMemoryDb();
+    await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
+    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+      .bind('i1', 'k1', 'review_requested', 'Review the launch PR', 'o/r', 'https://github.com/o/r/pull/1', '2026-04-30T00:00:00Z', 'You were requested for review.', 'Review PR', '{}', 'notifications').run();
+    const env = { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env;
+    const h = { Cookie: 'sunrise_session=sid' };
+
+    const found = await app.request('/items/i1', { headers: h }, env);
+    const foundHtml = await found.text();
+    expect(found.status).toBe(200);
+    expect(foundHtml).toContain('Review the launch PR');
+    expect(foundHtml).toContain('"component":"Item"');
+
+    const foundJson = await app.request('/items/i1', { headers: { ...h, 'X-Inertia': 'true', 'X-Inertia-Version': 'sunrise-1' } }, env);
+    const page = await foundJson.json() as any;
+    expect(page.component).toBe('Item');
+    expect(page.props.item.title).toBe('Review the launch PR');
+
+    const missing = await app.request('/items/nope', { headers: h }, env);
+    const missingHtml = await missing.text();
+    expect(missing.status).toBe(200);
+    expect(missingHtml).toContain('Card not found');
+  });
+
   it('returns paginated dashboard JSON with configurable 50 item default', async () => {
     const db = createMemoryDb();
     await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();

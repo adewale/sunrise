@@ -23,7 +23,7 @@ describe('manual refresh lifecycle', () => {
 
   it('renders running, completed, empty, and failed refresh notices', async () => {
     const db = await signedInDb();
-    await db.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, 0, 0)').bind('run1', 'manual', 'succeeded', '2026-05-01T00:00:00Z', 0, 0).run();
+    await db.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, ?, ?)').bind('run1', 'manual', 'succeeded', '2026-05-01T00:00:00Z', 0, 0).run();
     await db.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', '2026-05-01T00:00:00Z', 3, 'run1').run();
     let html = await (await app.request('/runs?refresh=started&runId=run1&candidates=3', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db } as unknown as Env)).text();
     expect(html).toContain('Manual refresh started');
@@ -38,7 +38,7 @@ describe('manual refresh lifecycle', () => {
     expect(html).toContain('Manual refresh completed');
     expect(html).not.toContain('http-equiv="refresh"');
 
-    await db.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, 0, 0)').bind('run2', 'manual', 'succeeded', '2026-05-02T00:00:00Z', 0, 0).run();
+    await db.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, ?, ?)').bind('run2', 'manual', 'succeeded', '2026-05-02T00:00:00Z', 0, 0).run();
     html = await (await app.request('/runs?refresh=started&runId=run2&candidates=0', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db } as unknown as Env)).text();
     expect(html).toContain('No GitHub events were found');
 

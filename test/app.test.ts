@@ -61,7 +61,7 @@ describe('Sunrise app routes', () => {
   it('renders dashboard as an inbox with marginal stats', async () => {
     const db = createMemoryDb();
     await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
-    await db.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, 0, 0)')
+    await db.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, ?, ?)')
       .bind('run1', 'manual', 'succeeded', '2026-04-30T00:00:00Z', 0, 0).run();
     await db.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', '2026-04-30T00:00:00Z', 3, 'run1').run();
     await db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
@@ -240,7 +240,7 @@ describe('Sunrise app routes', () => {
   it('shows richer runs operations with queue and rate-limit status', async () => {
     const db = createMemoryDb();
     await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
-    await db.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, 0, 0)').bind('run1', 'manual', 'succeeded', '2026-04-30T00:00:00Z', 0, 0).run();
+    await db.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, ?, ?)').bind('run1', 'manual', 'succeeded', '2026-04-30T00:00:00Z', 0, 0).run();
     await db.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', '2026-04-30T00:00:00Z', 3, 'run1').run();
     await db.prepare('INSERT INTO github_changes (id, run_id, canonical_subject_key, source_endpoint, repo, subject_type, subject_url, html_url, updated_at, raw_json, first_seen_at, last_seen_at, processing_status, attempt_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind('c1', 'run1', 'k1', 'notifications', 'o/r', 'Issue', 'api', 'html', '2026-04-30T00:00:00Z', '{}', '2026-04-30T00:00:00Z', '2026-04-30T00:00:00Z', 'pending', 0).run();

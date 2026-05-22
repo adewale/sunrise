@@ -37,6 +37,7 @@
     "hono": "^4.12.16"
   },
   "devDependencies": {
+    "@hono/node-server": "^2.0.3",
     "@types/node": "^25.6.0",
     "playwright": "^1.59.1",
     "typescript": "^6.0.3",

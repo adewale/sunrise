@@ -527,3 +527,13 @@ Regression tests should assert card URLs are human-facing. Existing stale rows m
 Repository names are context and navigation. If a card shows `owner/repo`, users expect it to open that repository.
 
 Make repo chips links to GitHub and keep them visually chip-like. This improves skimming and avoids forcing users to infer or copy repository URLs.
+
+## 36. Test fidelity, not just coverage
+
+A green suite hid three bugs because the tests didn't faithfully represent reality. All three were fidelity gaps, in different layers:
+
+- **Runtime fidelity.** The Playwright check rendered `setContent(staticHtml)` — an SSR snapshot — and never executed the client bundle. Client-only behavior (the theme toggle going inert after a header swap, a redundant navigation round-trip, a stale `data-page`) was invisible. Fix: a live-server E2E that serves the real app (`@hono/node-server`) and drives a real navigation in the browser, asserting one document load, one page request, the toggle still flips, and `data-page` updates.
+- **Data-layer fidelity.** The test DB was a hand-written fake that ignored `WHERE id = ?` (and tolerated extra bind params and missing NOT NULL columns), so tests could pass against SQL that D1 would reject. Fix: back the test DB with real in-memory SQLite loaded from the production migrations (`node:sqlite`). Real query semantics for free; the swap immediately surfaced several invalid test inserts.
+- **Oracle fidelity.** The client bundle was tested by asserting on its source text (`toContain('X-Inertia')`), which verifies the string, not the behavior. Fix: assert observable outcomes (request counts, DOM swap, toggle effect) in the E2E.
+
+Rule of thumb: prefer the real engine over a fake; when a test depends on the test environment enforcing a constraint, make sure the environment actually enforces it — otherwise the double becomes a yes-man and the suite reports false green. Also confirm new behavioral guards go *red* with the bug reintroduced, so you know the test can fail.

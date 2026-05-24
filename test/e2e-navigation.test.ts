@@ -7,13 +7,12 @@ import { createMemoryDb } from './memory-db';
 
 // Runtime-fidelity test for client-side navigation.
 //
-// SKIPPED after the Vite + real-Inertia migration: this test drove the old
-// hand-rolled client that the worker served inline and that intercepted plain
-// <a>/<form> for single-fetch swaps. The worker no longer serves the client or
-// CSS (Vite does), and SPA navigation now requires Inertia <Link>/<Form>
-// components (a deliberate follow-up). Until pages adopt <Link>, plain anchors
-// do a full reload by design. Real hydration + SPA navigation are verified
-// locally against `npm run dev` / `npm run preview` (the Vite-served stack).
+// SKIPPED in-sandbox after the Vite + real-Inertia migration. Pages now use
+// Inertia <Link>/<Form>, so SPA navigation is wired, but exercising it needs
+// the Vite-served, hydrated stack: the worker no longer serves the client
+// bundle or CSS (Vite/wrangler do), while this harness serves the bare Hono app
+// over @hono/node-server, so nothing hydrates here. Real hydration + SPA
+// navigation are verified locally against `npm run dev` / `npm run preview`.
 describe.skip('client-side navigation (live server, real bundle)', () => {
   let server: { close: (cb?: () => void) => void };
   let browser: Browser;

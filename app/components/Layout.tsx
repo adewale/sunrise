@@ -1,5 +1,5 @@
 import type { Child } from 'hono/jsx';
-import { usePage } from '@ts-76/inertia-hono-jsx';
+import { usePage, Link } from '@ts-76/inertia-hono-jsx';
 import { DashboardHeader, SettingsHeader } from '../pages/_shared';
 
 export function BrandMark() {
@@ -37,7 +37,7 @@ export default function Layout({ children }: { children?: Child }) {
     <>
       <a class="skip-link" href="#content">Skip to content</a>
       <header class="site-header">
-        <a class="brand" href="/"><BrandMark /><span>Sunrise</span></a>
+        <Link class="brand" href="/"><BrandMark /><span>Sunrise</span></Link>
         <HeaderExtra />
         <ThemeToggle />
       </header>

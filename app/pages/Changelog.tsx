@@ -1,3 +1,5 @@
+import { Link } from '@ts-76/inertia-hono-jsx';
+
 export default function Changelog(props: any) {
-  return <section class="section panel"><div class="section-head"><div><p class="eyebrow">What changed</p><h1>Changelog</h1><p class="muted">Privacy-preserving release notes for you and your coding agent. Sunrise does not register this deployment upstream.</p></div><a class="button ghost" href="/settings">Settings</a></div><div class="config-card"><p><span>Current version</span><code>{props.version?.version ?? 'unknown'}</code></p><p><span>Upgrade contract</span><code>{props.version?.upgradeContract}</code></p></div><pre class="changelog-text">{props.changelog}</pre></section>;
+  return <section class="section panel"><div class="section-head"><div><p class="eyebrow">What changed</p><h1>Changelog</h1><p class="muted">Privacy-preserving release notes for you and your coding agent. Sunrise does not register this deployment upstream.</p></div><Link class="button ghost" href="/settings">Settings</Link></div><div class="config-card"><p><span>Current version</span><code>{props.version?.version ?? 'unknown'}</code></p><p><span>Upgrade contract</span><code>{props.version?.upgradeContract}</code></p></div><pre class="changelog-text">{props.changelog}</pre></section>;
 }

@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { inertia } from '@hono/inertia';
 import { SetupChecks, SetupGuide } from '../app/pages/_shared';
 import { rootView, renderErrorDocument } from '../app/root-view';
@@ -127,10 +127,11 @@ app.get('/changelog', async (c) => {
 app.post('/settings', async (c) => {
   const session = await requireSession(c);
   if (session instanceof Response) return session;
-  const form = await c.req.parseBody();
+  const form = await readRequestBody(c);
   const pageSize = clampPageSize(Number(form.inboxPageSize ?? 50));
   await writeSetting(c.env.DB, 'inbox_page_size', String(pageSize));
-  await writeSetting(c.env.DB, 'include_subscribed_notifications', form.includeSubscribedNotifications === 'on' ? 'true' : 'false');
+  const include = form.includeSubscribedNotifications;
+  await writeSetting(c.env.DB, 'include_subscribed_notifications', include === 'on' || include === true || include === 'true' ? 'true' : 'false');
   return c.redirect('/settings?saved=1');
 });
 
@@ -538,6 +539,15 @@ async function html(body: string, status = 200) {
 
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
+
+// Inertia <Form> submits as application/json; native forms submit url-encoded.
+async function readRequestBody(c: Context<{ Bindings: Bindings }>): Promise<Record<string, any>> {
+  const contentType = c.req.header('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    try { return await c.req.json(); } catch { return {}; }
+  }
+  return await c.req.parseBody();
 }
 
 export default app;

@@ -20,8 +20,8 @@ This audit compares `specs/sunrise-github-dashboard-spec.md` with the current im
 - Queue processing increments `scan_runs.processed_count` for processed/ignored changes.
 - Hono routes are the app surface.
 - `@hono/inertia` is wired into page rendering for landing, setup, design, dashboard, settings, changelog, runs, and item pages.
-- Pages render with Hono's built-in JSX runtime (`hono/jsx`), not React. Page components live in `app/pages/*.tsx`; the `rootView` SSRs them to an HTML string, wraps them in the document shell, and embeds the page object as `<script data-page="app">` via `serializePage`.
-- A hand-rolled progressive navigation bundle is served at `/assets/sunrise-inertia-client.js`. It speaks the `X-Inertia` request/response protocol and swaps the header, `#content`, and the page-object script. There is no React, no client-side hydration, and no Vite build.
+- Pages render with Hono's built-in JSX runtime (`hono/jsx`), not React. Page components live in `app/pages/*.tsx`. SSR runs through `app/ssr.tsx` (`renderPage`/`createInertiaApp` + `import.meta.glob`); the `rootView` (`app/root-view.tsx`) wraps the rendered body in the document shell and embeds the page object as `<script data-page="app">`.
+- The client is a Vite-built bundle (`app/client.tsx`) that does real `hono/jsx/dom` hydration via `@ts-76/inertia-hono-jsx`. The build uses `@cloudflare/vite-plugin` + `vite-ssr-components`; CSS is `app/styles.css` and persistent chrome is a `Layout` component. (Historical note: this replaced an earlier hand-rolled `/assets/sunrise-inertia-client.js` bundle with no Vite build. Plain `<a>`/`<form>` currently do full-page navigations; Inertia `<Link>`/`<Form>` SPA conversion is a follow-up.)
 - `app/pages.gen.ts` constrains page names for `c.render(...)`.
 - Routes still provide JSON/props views for debugging/agent inspection (`?json` or `Accept: application/json` where applicable).
 - D1 indexes exist for the main dashboard/action-item, scan-run, session-expiry, ignored-item, and GitHub-change predicates.

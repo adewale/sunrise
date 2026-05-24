@@ -13,9 +13,10 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('Sunrise');
     expect(html).toContain('Deploy your own');
     expect(html).toContain('Setup checklist');
-    expect(html).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg">');
+    expect(html).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg"');
     expect(html).toContain('/raw/main/docs/assets/screenshots/dashboard.png');
-    expect(html).toContain('/assets/sunrise-inertia-client.js');
+    expect(html).toContain('/app/client.tsx');
+    expect(html).toContain('/app/styles.css');
   });
 
   it('can render a project landing page without personal setup claims', async () => {
@@ -28,25 +29,16 @@ describe('Sunrise app routes', () => {
     expect(html).not.toContain('Sign in with GitHub');
   });
 
-  it('serves a progressive client navigation bundle that fetches each page once', async () => {
-    const res = await app.request('/assets/sunrise-inertia-client.js', {}, { DB: createMemoryDb() } as unknown as Env);
-    const js = await res.text();
-    expect(res.headers.get('content-type')).toContain('text/javascript');
-    expect(res.headers.get('cache-control')).toContain('immutable');
-    expect(js).toContain('history.pushState');
-    expect(js).toContain("document.addEventListener('submit'");
-    // Single-fetch navigation: no redundant X-Inertia JSON round-trip before the HTML swap.
-    expect(js).not.toContain('X-Inertia');
-    expect(js).not.toContain('location.reload');
-    expect(js).not.toContain('location.href =');
-    expect((js.match(/await fetch\(/g) ?? []).length).toBe(2);
-  });
-
-  it('cache-busts the client bundle with a content hash in the document', async () => {
+  it('boots the Inertia client and stylesheet through Vite', async () => {
     const db = createMemoryDb();
     await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
     const html = await (await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env)).text();
-    expect(html).toMatch(/\/assets\/sunrise-inertia-client\.js\?v=[a-z0-9]+/);
+    // Real Inertia hydration: the page object is embedded and the #app mount is server-rendered
+    // for the Vite-built client (app/client.tsx) to hydrate. Asset hashing is handled by Vite.
+    expect(html).toContain('<script data-page="app" type="application/json">');
+    expect(html).toContain('data-server-rendered="true" id="app"');
+    expect(html).toContain('/app/client.tsx');
+    expect(html).toContain('/app/styles.css');
   });
 
   it('serves a sunrise inbox favicon with light and dark variants', async () => {
@@ -87,13 +79,14 @@ describe('Sunrise app routes', () => {
         expect(html).toContain('class="marginalia"');
     expect(html).toContain('Review the launch PR');
     expect(html).toContain('class="item-time"');
-    expect(html.indexOf('class="item-time"')).toBeLessThan(html.indexOf('Review the launch PR'));
+    // Order check within the server-rendered view (the embedded data-page JSON also mentions the title).
+    const rendered = html.slice(html.indexOf('data-server-rendered'));
+    expect(rendered.indexOf('class="item-time"')).toBeLessThan(rendered.indexOf('Review the launch PR'));
     expect(html).toContain('Review requested');
     expect(html).toContain('time-section');
     expect(html).toContain('type-icon');
     expect(html).toContain('repo-avatar');
     expect(html).toContain('item-signals');
-    expect(html).toContain('.item-topline{display:grid;grid-template-columns:auto minmax(0,1fr)');
     expect(html).toContain('updated ');
     expect(html).toContain('Open in GitHub');
     expect(html).toContain('My PR · other repo');
@@ -120,17 +113,9 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('<span>Issues</span><strong>1</strong>');
     expect(html).toContain('<span>My PRs · elsewhere</span><strong>1</strong>');
     expect(html).toContain('<span>PRs to my repos</span><strong>1</strong>');
-    expect(html).toContain('@media(max-width:760px){main{width:min(100% - 20px,1120px);margin-top:12px');
     expect(html).toContain('<header class="site-header"><a class="brand" href="/"><svg class="brand-mark"');
     expect(html).toContain('<button class="theme-toggle"');
     expect(html.indexOf('<button class="theme-toggle"')).toBeLessThan(html.indexOf('</header>'));
-    expect(html).toContain('html:not([data-theme=dark])[data-daypart=morning]');
-    expect(html).toContain('.site-header{position:fixed;z-index:19;top:0;left:0;right:0');
-    expect(html).toContain('border-radius:0 0 var(--radius) var(--radius)');
-    expect(html).toContain('.site-header{position:sticky;top:0;left:0;right:auto;width:100%');
-    expect(html).toContain('.header-extra form{display:block;flex:0 0 auto}');
-    expect(html).toContain('.sun-icon{left:10px');
-    expect(html).toContain('.moon-icon{right:10px');
     expect(html).toContain('Manual refresh');
     expect(html).toContain('data-refresh-form');
     expect(html).toContain('Refreshing...');

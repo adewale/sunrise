@@ -287,6 +287,16 @@ Dedupe by canonical subject key after combining sources. The UI should then pres
 
 ## 21. Inertia protocol does not require React or Vite
 
+> **Superseded (2026-05-24).** Sunrise has since moved to the full Vite setup:
+> `@cloudflare/vite-plugin` + `vite-ssr-components` build the worker and a real
+> client bundle (`app/client.tsx`), and `@ts-76/inertia-hono-jsx` does real
+> `hono/jsx/dom` hydration via `createInertiaApp`. SSR now runs through
+> `app/ssr.tsx` (`renderPage` + `import.meta.glob`), the document shell is
+> `app/root-view.tsx`, CSS lives in `app/styles.css`, and the persistent chrome
+> is a `Layout` component. The hand-rolled `/assets/sunrise-inertia-client.js`
+> bundle and the inline document-shell string are gone. The notes below describe
+> the earlier no-build approach and are kept for history.
+
 Starting with `@hono/inertia` installed is not the same as committing to the classic Inertia SPA stack. Sunrise uses the Inertia *protocol* on the wire but renders with Hono's built-in JSX runtime and no client framework. The structure that worked:
 
 ```txt

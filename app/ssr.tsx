@@ -11,5 +11,6 @@ export const renderPage = (page: PageObject) =>
     page: page as Page,
     render: renderToString,
     layout: () => Layout,
+    title: (t) => t ? `${t} | Sunrise` : 'Sunrise',
     resolve: (name) => pages[`./pages/${name}.tsx`] as never,
   });

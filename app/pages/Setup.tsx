@@ -1,5 +1,6 @@
+import { Head } from '@ts-76/inertia-hono-jsx';
 import { SetupGuide } from './_shared';
 
 export default function Setup(props: any) {
-  return <SetupGuide setup={props.setup} />;
+  return <><Head title="Setup" /><SetupGuide setup={props.setup} /></>;
 }

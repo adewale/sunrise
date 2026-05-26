@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { cloudflare } from '@cloudflare/vite-plugin';
+import { inertiaPages } from '@hono/inertia/vite';
 import ssrPlugin from 'vite-ssr-components/plugin';
 
 // Vitest merges this config; the Cloudflare worker plugin would take over the
@@ -8,5 +9,11 @@ import ssrPlugin from 'vite-ssr-components/plugin';
 const isTest = !!process.env.VITEST;
 
 export default defineConfig({
-  plugins: isTest ? [] : [cloudflare(), ssrPlugin()],
+  plugins: isTest
+    ? []
+    : [
+        inertiaPages({ exclude: ['Layout', '_shared'], serverModule: '../src/app' }),
+        cloudflare(),
+        ssrPlugin(),
+      ],
 });

@@ -237,7 +237,7 @@ describe('Sunrise app routes', () => {
     expect(html).toContain('Changelog');
     expect(html).toContain('does not register this deployment upstream');
     const setting = await env.DB.prepare('SELECT value FROM settings WHERE key = ?').bind('last_seen_sunrise_version').first<Record<string, any>>();
-    expect(setting?.value).toBe('0.1.0');
+    expect(setting?.value).toBe('0.2.0');
   });
 
   it('renders settings update card', async () => {

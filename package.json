@@ -1,6 +1,6 @@
 {
   "name": "sunrise",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Self-hosted GitHub action dashboard on Cloudflare.",
   "type": "module",
@@ -40,7 +40,6 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.38.0",
     "@cloudflare/vitest-pool-workers": "^0.16.10",
-    "@hono/node-server": "^2.0.3",
     "@inertiajs/core": "^3.2.0",
     "@ts-76/inertia-hono-jsx": "^0.2.3",
     "@types/node": "^25.6.0",

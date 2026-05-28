@@ -8,6 +8,7 @@
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx",
     "noEmit": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true
   },
   "include": ["src", "test", "app", "worker-configuration.d.ts"]

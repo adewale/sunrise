@@ -1,20 +1,16 @@
+import { env, SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import app from '../src/app';
-import type { Env } from '../src/env';
-import { createMemoryDb } from './memory-db';
 
-async function signedInDb() {
-  const db = createMemoryDb();
-  await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
-  return db;
+async function signIn() {
+  await env.DB.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
 }
 
 describe('route prop contracts', () => {
   it('returns stable dashboard props for agents and UI', async () => {
-    const db = await signedInDb();
-    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+    await signIn();
+    await env.DB.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
       .bind('i1', 'k1', 'review_requested', 'Review me', 'o/r', 'https://github.com/o/r/pull/1', '2026-05-01T00:00:00Z', 'Review requested', 'Review PR', '{}', 'notifications').run();
-    const res = await app.request('/dashboard?json', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env);
+    const res = await SELF.fetch('http://example.com/dashboard?json', { headers: { Cookie: 'sunrise_session=sid' } });
     const props = await res.json() as any;
     expect(props).toMatchObject({ product: 'Sunrise', signedInAs: 'ade' });
     expect(props.items[0]).toMatchObject({ title: 'Review me', repo: 'o/r', suggestedAction: 'Review PR' });
@@ -24,11 +20,11 @@ describe('route prop contracts', () => {
   });
 
   it('returns stable runs props including queue and a non-refreshing notice', async () => {
-    const db = await signedInDb();
-    await db.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, ?, ?)')
+    await signIn();
+    await env.DB.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, ?, ?)')
       .bind('run1', 'manual', 'succeeded', '2026-05-01T00:00:00Z', 0, 0).run();
-    await db.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', '2026-05-01T00:00:00Z', 3, 'run1').run();
-    const res = await app.request('/runs?refresh=started&runId=run1&candidates=3', { headers: { Cookie: 'sunrise_session=sid', Accept: 'application/json' } }, { DB: db } as unknown as Env);
+    await env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', '2026-05-01T00:00:00Z', 3, 'run1').run();
+    const res = await SELF.fetch('http://example.com/runs?refresh=started&runId=run1&candidates=3', { headers: { Cookie: 'sunrise_session=sid', Accept: 'application/json' } });
     const props = await res.json() as any;
     expect(props.notice.message).toContain('processed 0 so far');
     expect(props.notice.message).toContain('Reload manually');
@@ -37,7 +33,9 @@ describe('route prop contracts', () => {
   });
 
   it('returns setup diagnostics JSON without pretending OAuth is verified', async () => {
-    const res = await app.request('/setup?json', {}, { DB: createMemoryDb(), GITHUB_CLIENT_ID: '', OWNER_LOGIN: '', SESSION_SECRET: '' } as unknown as Env);
+    env.OWNER_LOGIN = '';
+    env.SESSION_SECRET = '';
+    const res = await SELF.fetch('http://example.com/setup?json');
     const setup = await res.json() as any;
     expect(setup.ready).toBe(false);
     expect(setup.checks.some((c: any) => c.id === 'callback_url')).toBe(true);

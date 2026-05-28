@@ -1,9 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { env } from 'cloudflare:test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runDiscovery } from '../src/scanner';
-import type { Env } from '../src/env';
-import { createMemoryDb } from './memory-db';
 
 describe('GitHub discovery', () => {
+  // By default, exercise inline scanning (write directly to action_items). The
+  // 'uses sendBatch' test re-sets GITHUB_QUEUE to its own mock.
+  beforeEach(() => { (env as any).GITHUB_QUEUE = undefined; });
   afterEach(() => vi.restoreAllMocks());
 
   it('paginates notifications and discovers open issues, PRs, and involved threads', async () => {
@@ -31,11 +33,10 @@ describe('GitHub discovery', () => {
       return Response.json([]);
     }));
 
-    const db = createMemoryDb();
-    const result = await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
+    const result = await runDiscovery(env, 'manual', 'token');
 
     expect(result.candidateCount).toBe(7);
-    const changes = await db.prepare('SELECT * FROM github_changes').all<Record<string, any>>();
+    const changes = await env.DB.prepare('SELECT * FROM github_changes').all<Record<string, any>>();
     expect(changes.results.map((row) => row.source_endpoint)).toEqual(expect.arrayContaining([
       'notifications',
       'search/review-requests',
@@ -45,7 +46,7 @@ describe('GitHub discovery', () => {
       'search/owned-repo-prs',
       'search/involved',
     ]));
-    const items = await db.prepare('SELECT * FROM action_items').all<Record<string, any>>();
+    const items = await env.DB.prepare('SELECT * FROM action_items').all<Record<string, any>>();
     expect(items.results.find((row) => row.kind === 'mention')?.url).toBe('https://github.com/o/r/issues/1');
     expect(items.results.map((row) => row.kind)).toEqual(expect.arrayContaining([
       'mention',
@@ -55,7 +56,7 @@ describe('GitHub discovery', () => {
       'maintenance',
       'repo_pr',
     ]));
-    const run = (await db.prepare('SELECT * FROM scan_runs').first<Record<string, any>>())!;
+    const run = (await env.DB.prepare('SELECT * FROM scan_runs').first<Record<string, any>>())!;
     expect(run.processed_count).toBe(7);
   });
 
@@ -66,10 +67,9 @@ describe('GitHub discovery', () => {
       if (u.includes('/search/issues')) return search([]);
       return Response.json([]);
     }));
-    const db = createMemoryDb();
-    await db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)').bind('include_subscribed_notifications', 'true', '2026-05-01T00:00:00Z').run();
-    const result = await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
-    const items = await db.prepare('SELECT * FROM action_items').all<Record<string, any>>();
+    await env.DB.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)').bind('include_subscribed_notifications', 'true', '2026-05-01T00:00:00Z').run();
+    const result = await runDiscovery(env, 'manual', 'token');
+    const items = await env.DB.prepare('SELECT * FROM action_items').all<Record<string, any>>();
     expect(result.candidateCount).toBe(1);
     expect(items.results[0].kind).toBe('notification');
     expect(JSON.parse(items.results[0].evidence_json).notificationReason).toBe('subscribed');
@@ -84,7 +84,6 @@ describe('GitHub discovery', () => {
       if (u.includes('/user/memberships/orgs')) return Response.json([]);
       return Response.json([]);
     }));
-    const db = createMemoryDb();
     const stale = [
       ['old-invite', 'github:invitations/repository:ade/new', 'invitation', 'Repository invitation: ade/new', 'https://github.com/ade/new'],
       ['old-review', 'github:o/r/pull/1', 'review_requested', 'Review me', 'https://github.com/o/r/pull/1'],
@@ -94,15 +93,15 @@ describe('GitHub discovery', () => {
       ['old-repo-pr', 'github:ade/r/pull/5', 'repo_pr', 'Repo PR', 'https://github.com/ade/r/pull/5'],
     ];
     for (const [id, key, kind, title, url] of stale) {
-      await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+      await env.DB.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
         .bind(id, key, kind, title, 'ade/r', url, '2026-05-01T00:00:00Z', 'stale', 'act', '{}', 'search').run();
     }
-    await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
+    await env.DB.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
       .bind('keep-mention', 'github:o/r/issues/9', 'mention', 'Mention', 'o/r', 'https://github.com/o/r/issues/9', '2026-05-01T00:00:00Z', 'mention', 'reply', '{}', 'notifications').run();
 
-    await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
+    await runDiscovery(env, 'manual', 'token');
 
-    const items = await db.prepare('SELECT * FROM action_items').all<Record<string, any>>();
+    const items = await env.DB.prepare('SELECT * FROM action_items').all<Record<string, any>>();
     expect(items.results.map((row) => row.kind)).not.toEqual(expect.arrayContaining(['invitation', 'review_requested', 'assigned', 'authored_pr_pending', 'maintenance', 'repo_pr']));
     expect(items.results.some((row) => row.kind === 'mention')).toBe(true);
   });
@@ -114,12 +113,11 @@ describe('GitHub discovery', () => {
       if (u.includes('/search/issues')) return search([]);
       return Response.json([]);
     }));
-    const db = createMemoryDb();
-    const first = await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
-    const second = await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token') as any;
+    const first = await runDiscovery(env, 'manual', 'token');
+    const second = await runDiscovery(env, 'manual', 'token') as any;
     expect(first.candidateCount).toBe(1);
     expect(second).toMatchObject({ candidateCount: 0, noChange: true });
-    const runs = await db.prepare('SELECT * FROM scan_runs').all<Record<string, any>>();
+    const runs = await env.DB.prepare('SELECT * FROM scan_runs').all<Record<string, any>>();
     expect(runs.results.some((run) => run.status === 'no_change')).toBe(true);
   });
 
@@ -135,9 +133,8 @@ describe('GitHub discovery', () => {
       if (u.includes('/search/issues')) return search([]);
       return Response.json([]);
     }));
-    const db = createMemoryDb();
-    await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
-    const second = await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token') as any;
+    await runDiscovery(env, 'manual', 'token');
+    const second = await runDiscovery(env, 'manual', 'token') as any;
     expect(calls).toBeGreaterThan(1);
     expect(second.noChange).toBe(true);
   });
@@ -150,11 +147,11 @@ describe('GitHub discovery', () => {
       return Response.json([]);
     }));
     const queue = { sendBatch: vi.fn(async () => undefined), send: vi.fn(async () => undefined) };
-    const db = createMemoryDb();
-    await runDiscovery({ DB: db, GITHUB_QUEUE: queue, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
+    (env as any).GITHUB_QUEUE = queue;
+    await runDiscovery(env, 'manual', 'token');
     expect(queue.sendBatch).toHaveBeenCalledOnce();
     expect(queue.send).not.toHaveBeenCalled();
-    const run = (await db.prepare('SELECT * FROM scan_runs').first<Record<string, any>>())!;
+    const run = (await env.DB.prepare('SELECT * FROM scan_runs').first<Record<string, any>>())!;
     expect(run.processed_count ?? 0).toBe(0);
   });
 });

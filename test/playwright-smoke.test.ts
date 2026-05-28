@@ -1,44 +1,46 @@
-import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
-import { chromium } from 'playwright';
-import app from '../src/app';
-import type { Env } from '../src/env';
-import { createMemoryDb } from './memory-db';
+import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
+import { chromium, type Browser, type Page } from 'playwright';
 
-// The worker no longer inlines CSS; Vite serves app/styles.css as a hashed asset.
-// setContent has no server, so inline the stylesheet to exercise real layout.
-const css = readFileSync(new URL('../app/styles.css', import.meta.url), 'utf8');
-const withCss = (html: string) => html.replace('</head>', `<style>${css}</style></head>`);
+// Browser-rendered smoke checks against `vite preview` (real production worker
+// in workerd). Asserts the page actually paints the expected landmarks and the
+// fixed/sticky site-header anchors to the viewport at the mobile breakpoint.
+describe('Browser smoke checks (vite preview)', () => {
+  let browser: Browser;
+  const origin = inject('browserOrigin');
 
-describe('Playwright smoke checks', () => {
-  it('renders the project landing and mobile dashboard landmarks', async () => {
-    const browser = await chromium.launch();
-    try {
-      const landingHtml = await (await app.request('/', {}, { DB: createMemoryDb(), PROJECT_LANDING: 'true', GITHUB_REPO_URL: 'https://github.com/adewale/sunrise' } as unknown as Env)).text();
-      const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-      await page.setContent(withCss(landingHtml));
-      await expectText(page, 'Sunrise');
-      await expectText(page, 'Deploy your own');
-      expect(await page.locator('.product-shot img').count()).toBe(1);
-      await page.close();
-
-      const db = createMemoryDb();
-      await db.prepare("INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES ('sid','ade','1','tok','2999-01-01T00:00:00Z','2026-01-01T00:00:00Z')").run();
-      await db.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
-        .bind('i1', 'k1', 'review_requested', 'Review me', 'o/r', 'https://github.com/o/r/pull/1', '2026-05-01T00:00:00Z', 'Review requested', 'Review PR', '{}', 'notifications').run();
-      const dashboardHtml = await (await app.request('/dashboard', { headers: { Cookie: 'sunrise_session=sid' } }, { DB: db, OWNER_LOGIN: 'ade' } as unknown as Env)).text();
-      const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
-      await mobile.setContent(withCss(dashboardHtml));
-      await expectText(mobile, 'Manual refresh');
-      await expectText(mobile, 'Review me');
-      expect(await mobile.locator('.site-header').boundingBox()).toMatchObject({ x: 0, y: 0, width: 390 });
-      await mobile.close();
-    } finally {
-      await browser.close();
-    }
+  beforeAll(async () => {
+    browser = await chromium.launch();
   }, 30000);
-});
 
-async function expectText(page: any, text: string) {
-  expect(await page.getByText(text).first().isVisible()).toBe(true);
-}
+  afterAll(async () => {
+    await browser?.close();
+  });
+
+  async function expectText(page: Page, text: string) {
+    expect(await page.getByText(text).first().isVisible()).toBe(true);
+  }
+
+  it('renders landing and mobile dashboard landmarks', async () => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.route('**/*', (route) => (route.request().url().startsWith(origin) ? route.continue() : route.abort()));
+
+    // Landing: public, no session needed.
+    await page.goto(`${origin}/`, { waitUntil: 'load' });
+    await expectText(page, 'Sunrise');
+    await expectText(page, 'Deploy your own');
+    expect(await page.locator('.product-shot img').count()).toBe(1);
+
+    // Dashboard (mobile): seeded session + item, real CSS, sticky header pinned to 0,0.
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await context.addCookies([{ name: 'sunrise_session', value: 'sid', url: origin }]);
+    const mobile = await context.newPage();
+    await mobile.route('**/*', (route) => (route.request().url().startsWith(origin) ? route.continue() : route.abort()));
+    await mobile.goto(`${origin}/dashboard`, { waitUntil: 'load' });
+    await expectText(mobile, 'Manual refresh');
+    await expectText(mobile, 'Review the launch PR');
+    expect(await mobile.locator('.site-header').boundingBox()).toMatchObject({ x: 0, y: 0, width: 390 });
+
+    await context.close();
+    await page.close();
+  });
+});

@@ -1,6 +1,7 @@
 import type { Child } from 'hono/jsx';
 import { usePage, Link } from '@ts-76/inertia-hono-jsx';
 import { DashboardHeader, SettingsHeader } from '../pages/_shared';
+import type { DashboardProps } from '../../src/app';
 
 export function BrandMark() {
   return (
@@ -26,9 +27,8 @@ export function ThemeToggle() {
 
 function HeaderExtra() {
   const page = usePage();
-  const props = page.props as any;
-  if (page.component === 'Dashboard') return <DashboardHeader {...props} />;
-  if (page.component === 'Settings' || page.component === 'Changelog') return <SettingsHeader {...props} />;
+  if (page.component === 'Dashboard') return <DashboardHeader {...(page.props as unknown as DashboardProps)} />;
+  if (page.component === 'Settings' || page.component === 'Changelog') return <SettingsHeader signedInAs={(page.props as { signedInAs?: string }).signedInAs ?? ''} />;
   return null;
 }
 

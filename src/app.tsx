@@ -9,6 +9,93 @@ import type { GitHubActionItem } from './types';
 import { processGithubChange, runDiscovery } from './scanner';
 import { SUNRISE_CHANGELOG, SUNRISE_VERSION } from './version';
 
+const PRODUCT = 'Sunrise' as const;
+
+export type RefreshNotice = { kind: 'success' | 'fail' | 'running'; message: string };
+
+type FreshnessStatus = 'fresh' | 'stale' | 'failed' | 'running';
+type ScanFreshness = { lastScanAt: string | null; status: FreshnessStatus };
+type RateLimitSummary = { remaining: number; resetAt: string };
+
+type DashboardCounts = {
+  assigned: number;
+  mentioned: number;
+  createdIssuesNeedingResponse: number;
+  pullRequests: number;
+  issues: number;
+  myPrsOwnRepos: number;
+  myPrsOtherRepos: number;
+  prsInMyRepos: number;
+  authoredOpenPrs: number;
+  reviewRequests: number;
+};
+
+type Pagination = { page: number; pageSize: number; totalItems: number; totalPages: number; hasPrevious: boolean; hasNext: boolean };
+type UnresolvedLinkRow = { id: string; label: string; count: number; href: string; query?: string };
+type RefreshSummary = Record<string, any>;
+
+export type LandingProps = {
+  product: typeof PRODUCT;
+  signedIn: false;
+  projectLanding: boolean;
+  setup: SetupDiagnostics | null;
+  repoUrl: string;
+};
+
+export type DesignProps = { product: typeof PRODUCT };
+
+export type SetupPageProps = { product: typeof PRODUCT; setup: SetupDiagnostics };
+
+export type DashboardProps = {
+  product: typeof PRODUCT;
+  signedInAs: string;
+  freshness: ScanFreshness;
+  rateLimit: RateLimitSummary | null;
+  refreshSummary: RefreshSummary | null;
+  counts: DashboardCounts;
+  unresolvedLinks: UnresolvedLinkRow[];
+  items: GitHubActionItem[];
+  pagination: Pagination;
+  settings: UserSettings;
+  usingFixtures: boolean;
+  notice?: RefreshNotice | null;
+};
+
+export type ItemPageProps = {
+  product: typeof PRODUCT;
+  signedInAs: string;
+  item: GitHubActionItem | null;
+};
+
+export type SettingsProps = {
+  product: typeof PRODUCT;
+  signedInAs: string;
+  settings: UserSettings;
+  version: typeof SUNRISE_VERSION;
+  update: { currentVersion: string; lastSeenVersion: string | null; hasUnseenChangelog: boolean };
+};
+
+export type ChangelogProps = {
+  product: typeof PRODUCT;
+  signedInAs: string;
+  version: typeof SUNRISE_VERSION;
+  changelog: string;
+};
+
+type ScanRunRow = Record<string, any>;
+type QueueStats = { pending: number; failed: number; processed: number; dlq: string; maxBatchSize: number; maxBatchTimeout: number; maxRetries: number; brokerPending?: number | null; dlqCount?: number | null; source?: 'd1' | 'cloudflare' };
+
+export type RunsProps = {
+  product: typeof PRODUCT;
+  runs: ScanRunRow[];
+  activeRunId: string | null;
+  activeRun: ScanRunRow | null;
+  notice: RefreshNotice | null;
+  freshness: ScanFreshness;
+  rateLimit: { resource: string; remaining: number; resetAt: string; capturedAt: string } | null;
+  queue: QueueStats;
+};
+
 type Bindings = Env;
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -21,19 +108,19 @@ app.get('/', async (c) => {
   if (session) return c.redirect('/dashboard');
   const projectLanding = c.env.PROJECT_LANDING === 'true';
   const setup = projectLanding ? null : await setupDiagnostics(c.env, c.req.url);
-  const props = { product: 'Sunrise', signedIn: false, projectLanding, setup, repoUrl: c.env.GITHUB_REPO_URL ?? 'https://github.com/adewale/sunrise' };
+  const props: LandingProps = { product: PRODUCT, signedIn: false, projectLanding, setup, repoUrl: c.env.GITHUB_REPO_URL ?? 'https://github.com/adewale/sunrise' };
   if (c.req.query('json') !== undefined) return c.json(props);
   return c.render('Landing', props);
 });
 
 app.get('/design', (c) => {
-  return c.render('Design', { product: 'Sunrise' });
+  return c.render('Design', { product: PRODUCT } satisfies DesignProps);
 });
 
 app.get('/setup', async (c) => {
   const setup = await setupDiagnostics(c.env, c.req.url);
   if (c.req.query('json') !== undefined || c.req.header('Accept')?.includes('application/json')) return c.json(setup);
-  return c.render('Setup', { product: 'Sunrise', setup });
+  return c.render('Setup', { product: PRODUCT, setup } satisfies SetupPageProps);
 });
 
 app.get('/login', async (c) => {
@@ -91,9 +178,8 @@ app.get('/callback', async (c) => {
 app.get('/dashboard', async (c) => {
   const session = await requireSession(c);
   if (session instanceof Response) return session;
-  const props: any = await dashboardProps(c.env, session.githubLogin, Number(c.req.query('page') ?? '1'));
-  if (c.req.query('refresh') === 'started') props.notice = { kind: 'success', message: `Manual refresh started. Found ${c.req.query('candidates') ?? '0'} GitHub events; the inbox will fill in as processing finishes. View details on the runs page.` };
-  if (c.req.query('refresh') === 'failed') props.notice = { kind: 'fail', message: `Manual refresh failed${c.req.query('error') ? `: ${c.req.query('error')}` : '.'}` };
+  const base = await dashboardProps(c.env, session.githubLogin, Number(c.req.query('page') ?? '1'));
+  const props: DashboardProps = { ...base, notice: dashboardNotice(c.req.query('refresh'), c.req.query('candidates'), c.req.query('error')) };
   if (c.req.query('json') !== undefined || c.req.header('Accept')?.includes('application/json')) return c.json(props);
   return c.render('Dashboard', props);
 });
@@ -102,7 +188,7 @@ app.get('/items/:id', async (c) => {
   const session = await requireSession(c);
   if (session instanceof Response) return session;
   const row = await c.env.DB.prepare('SELECT * FROM action_items WHERE id = ? AND ignored_at IS NULL LIMIT 1').bind(c.req.param('id')).first<Record<string, any>>();
-  const props = { product: 'Sunrise', signedInAs: session.githubLogin, item: row ? rowToItem(row) : null };
+  const props: ItemPageProps = { product: PRODUCT, signedInAs: session.githubLogin, item: row ? rowToItem(row) : null };
   if (c.req.header('Accept')?.includes('application/json')) return c.json(props);
   return c.render('Item', props);
 });
@@ -112,17 +198,24 @@ app.get('/settings', async (c) => {
   if (session instanceof Response) return session;
   const settings = await readSettings(c.env.DB);
   const lastSeenVersion = await readSetting(c.env.DB, 'last_seen_sunrise_version');
-  return c.render('Settings', { product: 'Sunrise', signedInAs: session.githubLogin, settings, version: SUNRISE_VERSION, update: { currentVersion: SUNRISE_VERSION.version, lastSeenVersion, hasUnseenChangelog: lastSeenVersion !== SUNRISE_VERSION.version } });
+  const props: SettingsProps = { product: PRODUCT, signedInAs: session.githubLogin, settings, version: SUNRISE_VERSION, update: { currentVersion: SUNRISE_VERSION.version, lastSeenVersion, hasUnseenChangelog: lastSeenVersion !== SUNRISE_VERSION.version } };
+  return c.render('Settings', props);
 });
 
 app.get('/changelog', async (c) => {
   const session = await requireSession(c);
   if (session instanceof Response) return session;
   await writeSetting(c.env.DB, 'last_seen_sunrise_version', SUNRISE_VERSION.version);
-  const props = { product: 'Sunrise', signedInAs: session.githubLogin, version: SUNRISE_VERSION, changelog: SUNRISE_CHANGELOG };
+  const props: ChangelogProps = { product: PRODUCT, signedInAs: session.githubLogin, version: SUNRISE_VERSION, changelog: SUNRISE_CHANGELOG };
   if (c.req.header('Accept')?.includes('application/json')) return c.json(props);
   return c.render('Changelog', props);
 });
+
+function dashboardNotice(refresh: string | undefined, candidates: string | undefined, error: string | undefined): RefreshNotice | null {
+  if (refresh === 'started') return { kind: 'success', message: `Manual refresh started. Found ${candidates ?? '0'} GitHub events; the inbox will fill in as processing finishes. View details on the runs page.` };
+  if (refresh === 'failed') return { kind: 'fail', message: `Manual refresh failed${error ? `: ${error}` : '.'}` };
+  return null;
+}
 
 app.post('/settings', async (c) => {
   const session = await requireSession(c);
@@ -183,10 +276,10 @@ app.post('/__debug/reprocess/:changeId', async (c) => {
   return c.json({ ok: true });
 });
 
-async function runsProps(env: Env, runId?: string, refresh?: string, candidateCount?: string, error?: string) {
-  const runs = (await env.DB.prepare('SELECT * FROM scan_runs ORDER BY started_at DESC LIMIT 10').all()).results;
-  const lastRun = await env.DB.prepare('SELECT * FROM scan_runs ORDER BY started_at DESC LIMIT 1').first<Record<string, any>>();
-  const activeRun = runId ? await env.DB.prepare('SELECT * FROM scan_runs WHERE id = ? LIMIT 1').bind(runId).first<Record<string, any>>() : null;
+async function runsProps(env: Env, runId?: string, refresh?: string, candidateCount?: string, error?: string): Promise<RunsProps> {
+  const runs = (await env.DB.prepare('SELECT * FROM scan_runs ORDER BY started_at DESC LIMIT 10').all<ScanRunRow>()).results;
+  const lastRun = await env.DB.prepare('SELECT * FROM scan_runs ORDER BY started_at DESC LIMIT 1').first<ScanRunRow>();
+  const activeRun = runId ? await env.DB.prepare('SELECT * FROM scan_runs WHERE id = ? LIMIT 1').bind(runId).first<ScanRunRow>() : null;
   const rate = await env.DB.prepare('SELECT * FROM rate_limit_snapshots ORDER BY captured_at DESC LIMIT 1').first<Record<string, any>>();
   const pending = await countRows(env.DB, "SELECT COUNT(*) AS count FROM github_changes WHERE processing_status = 'pending'");
   const failed = await countRows(env.DB, "SELECT COUNT(*) AS count FROM github_changes WHERE processing_status = 'failed'");
@@ -194,7 +287,7 @@ async function runsProps(env: Env, runId?: string, refresh?: string, candidateCo
   const queue = await queueStats(env, { pending, failed, processed, dlq: 'sunrise-github-dlq', maxBatchSize: 10, maxBatchTimeout: 30, maxRetries: 3 });
   const notice = refreshNotice(refresh, activeRun, candidateCount, error);
   return {
-    product: 'Sunrise',
+    product: PRODUCT,
     runs,
     activeRunId: runId ?? null,
     activeRun,
@@ -205,7 +298,7 @@ async function runsProps(env: Env, runId?: string, refresh?: string, candidateCo
   };
 }
 
-function refreshNotice(refresh?: string, activeRun?: Record<string, any> | null, candidateCount?: string, error?: string) {
+function refreshNotice(refresh?: string, activeRun?: ScanRunRow | null, candidateCount?: string, error?: string): RefreshNotice | null {
   if (refresh === 'failed') return { kind: 'fail', message: `Manual refresh failed${error ? `: ${error}` : '.'}` };
   if (refresh !== 'started') return null;
   const found = Number(activeRun?.candidate_count ?? candidateCount ?? 0);
@@ -221,7 +314,7 @@ async function countRows(db: D1Database, sql: string) {
   return Number(row?.count ?? 0);
 }
 
-async function queueStats(env: Env, fallback: any) {
+async function queueStats(env: Env, fallback: QueueStats): Promise<QueueStats> {
   const accountId = env.CLOUDFLARE_ACCOUNT_ID;
   const token = env.CLOUDFLARE_API_TOKEN;
   if (!accountId || !token) return { ...fallback, source: 'd1' };
@@ -241,7 +334,7 @@ async function cloudflareQueueDepth(accountId: string, token: string, queueName:
   } catch { return null; }
 }
 
-async function dashboardProps(env: Env, login: string, page = 1) {
+async function dashboardProps(env: Env, login: string, page = 1): Promise<Omit<DashboardProps, 'notice'>> {
   const settings = await readSettings(env.DB);
   const pageSize = settings.inboxPageSize;
   const currentPage = Math.max(1, Math.floor(page || 1));
@@ -255,7 +348,7 @@ async function dashboardProps(env: Env, login: string, page = 1) {
   const rate = await env.DB.prepare('SELECT * FROM rate_limit_snapshots ORDER BY captured_at DESC LIMIT 1').first<Record<string, any>>();
   const refreshSummary = await readRefreshSummary(env.DB);
   return {
-    product: 'Sunrise',
+    product: PRODUCT,
     signedInAs: login,
     freshness: { lastScanAt: lastRun?.completed_at ?? lastRun?.started_at ?? null, status: scanStatus(lastRun) },
     rateLimit: rate ? { remaining: rate.remaining, resetAt: rate.reset_at } : null,
@@ -305,8 +398,8 @@ function isIssueItem(item: GitHubActionItem) {
   return !isPullRequestItem(item) && (item.url.includes('/issues/') || item.kind === 'assigned' || item.kind === 'maintenance' || item.source === 'issues');
 }
 
-function unresolvedGitHubLinks(items: GitHubActionItem[], login: string) {
-  const rows = [
+function unresolvedGitHubLinks(items: GitHubActionItem[], login: string): UnresolvedLinkRow[] {
+  const rows: UnresolvedLinkRow[] = [
     unresolvedRow('open-issues-owned', 'Open issues in my repos', items.filter((i) => isIssueItem(i) && isOwnRepoItem(i, login)).length, '/issues', `is:issue is:open user:${login} archived:false`),
     unresolvedRow('open-prs-owned', 'Open PRs in my repos', items.filter((i) => isPullRequestItem(i) && isOwnRepoItem(i, login)).length, '/pulls', `is:pr is:open user:${login} archived:false`),
     unresolvedRow('review-requests', 'Review requests', items.filter((i) => i.kind === 'review_requested').length, '/pulls/review-requested'),
@@ -320,13 +413,13 @@ function unresolvedGitHubLinks(items: GitHubActionItem[], login: string) {
   return rows.filter((row) => row.count > 0);
 }
 
-function unresolvedRow(id: string, label: string, count: number, path: string, query?: string) {
+function unresolvedRow(id: string, label: string, count: number, path: string, query?: string): UnresolvedLinkRow {
   const url = new URL(path, 'https://github.com');
   if (query) url.searchParams.set('q', query);
   return { id, label, count, href: url.toString(), query };
 }
 
-function invitationLink(item: GitHubActionItem) {
+function invitationLink(item: GitHubActionItem): UnresolvedLinkRow {
   const label = item.repo ? `Invitation · ${item.repo}` : item.title;
   return { id: `invitation-${item.canonicalSubjectKey}`, label, count: 1, href: item.url, query: 'Open the invited repository or organization in GitHub to accept or decline.' };
 }
@@ -357,7 +450,7 @@ function setupMissing(env: Env) {
   return ['DB', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'OWNER_LOGIN', 'SESSION_SECRET'].filter((key) => !(env as any)[key]);
 }
 
-type UserSettings = { inboxPageSize: number; includeSubscribedNotifications: boolean };
+export type UserSettings = { inboxPageSize: number; includeSubscribedNotifications: boolean };
 
 async function readSetting(db: D1Database, key: string) {
   const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<Record<string, string>>();
@@ -387,9 +480,9 @@ function clampPageSize(value: number) {
   return [25, 50, 100].includes(value) ? value : 50;
 }
 
-type SetupCheck = { id: string; label: string; status: 'pass' | 'warn' | 'fail'; message: string; fix?: string };
+export type SetupCheck = { id: string; label: string; status: 'pass' | 'warn' | 'fail'; message: string; fix?: string };
 
-type SetupDiagnostics = {
+export type SetupDiagnostics = {
   ready: boolean;
   origin: string;
   callbackUrl: string;
@@ -527,7 +620,7 @@ async function checkGitHubClientId(clientId: string, callbackUrl: string): Promi
   }
 }
 
-function scanStatus(run: Record<string, any> | null) {
+function scanStatus(run: Record<string, any> | null | undefined): FreshnessStatus {
   if (!run) return 'stale';
   if (run.status === 'failed' || run.status === 'running') return run.status;
   return Date.now() - Date.parse(run.completed_at ?? run.started_at) > 36 * 60 * 60 * 1000 ? 'stale' : 'fresh';

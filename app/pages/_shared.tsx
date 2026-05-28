@@ -1,20 +1,10 @@
 import { Link, Form } from '@ts-76/inertia-hono-jsx';
+import type { GitHubActionItem } from '../../src/types';
+import type { DashboardProps, SetupCheck, SetupDiagnostics } from '../../src/app';
 
-type ActionItem = {
-  id: string;
-  canonicalSubjectKey: string;
-  kind: string;
-  title: string;
-  repo: string;
-  url: string;
-  updatedAt: string;
-  reason: string;
-  suggestedAction: string;
-  source: string;
-  evidence?: { isOwnRepo?: boolean; isAuthored?: boolean; author?: string; checks?: string; mergeable?: string; notificationReason?: string };
-};
+type ActionItem = GitHubActionItem;
 
-export function Stat({ label, value }: { label: string; value: any }) {
+export function Stat({ label, value }: { label: string; value: string | number }) {
   return <p class="stat"><span>{label}</span><strong>{value}</strong></p>;
 }
 
@@ -22,11 +12,11 @@ export function UnresolvedLink({ row }: { row: { label: string; count: number; h
   return <a class="stat unresolved-link" href={row.href} target="_blank" rel="noreferrer" title={row.query ? `Opens GitHub: ${row.query}` : 'Opens GitHub'}><span>{row.label}<em>Open in GitHub</em></span><strong>{row.count} ↗</strong></a>;
 }
 
-export function SetupChecks({ checks }: { checks: any[] }) {
-  return <div class="setup-checks">{(checks ?? []).map((check: any) => <article class={`setup-check ${check.status}`}><span class="check-dot">{check.status === 'pass' ? '✓' : check.status === 'warn' ? '!' : '×'}</span><div><strong>{check.label}</strong><p>{check.message}</p>{check.fix ? <p class="fix">{check.fix}</p> : null}</div></article>)}</div>;
+export function SetupChecks({ checks }: { checks: SetupCheck[] }) {
+  return <div class="setup-checks">{(checks ?? []).map((check) => <article class={`setup-check ${check.status}`}><span class="check-dot">{check.status === 'pass' ? '✓' : check.status === 'warn' ? '!' : '×'}</span><div><strong>{check.label}</strong><p>{check.message}</p>{check.fix ? <p class="fix">{check.fix}</p> : null}</div></article>)}</div>;
 }
 
-export function SetupGuide({ setup }: { setup: any }) {
+export function SetupGuide({ setup }: { setup: SetupDiagnostics }) {
   const deployUrl = 'https://deploy.workers.cloudflare.com/?url=https://github.com/adewale/sunrise&paid=true';
   const dashboardPath = 'Workers & Pages → sunrise → Settings → Variables and Secrets';
   const steps = [
@@ -47,14 +37,14 @@ export function Item({ item, ownerLogin = '' }: { item: ActionItem; ownerLogin?:
   return <article class="item" id={`item-${item.id}`}><Link class="item-time" href={`/items/${encodeURIComponent(item.id)}`} title="Open this card" aria-label={`Open card updated ${when.date} ${when.time}`}><time datetime={item.updatedAt}><span>{when.date}</span><strong>{when.time}</strong></time></Link><div class="item-main"><div class="item-topline"><div class="item-signals"><span class="type-icon" aria-hidden="true">{itemIcon(item)}</span><img class="repo-avatar" src={`https://github.com/${repoOwner}.png?size=40`} alt="" loading="lazy" />{author ? <img class="author-avatar" src={`https://github.com/${author}.png?size=40`} alt="" loading="lazy" /> : null}{checkDot(item)}</div><div class="chips">{chips.map((chip) => <span class="chip">{chip}</span>)}{item.repo ? <a class="chip repo-chip" href={`https://github.com/${item.repo}`} target="_blank" rel="noreferrer">{item.repo} ↗</a> : null}</div></div><a class="item-title" href={item.url}>{item.title}</a><p>{item.reason}</p><p class="action">{item.suggestedAction} <span class="relative-time">· updated {relativeTime(item.updatedAt)}</span></p></div></article>;
 }
 
-export function DashboardHeader(props: any) {
+export function DashboardHeader(props: DashboardProps) {
   const rs = props.refreshSummary;
   const summary = rs ? ` · ${rs.status === 'no_change' ? 'no GitHub changes' : `${rs.candidateCount ?? 0} found · ${rs.resolvedCount ?? 0} resolved`}` : '';
   const rate = props.rateLimit ? ` · rate limit ${props.rateLimit.remaining}` : '';
   return <div class="header-extra"><div><p class="eyebrow">{props.signedInAs} · {props.freshness.status}</p><p class="header-meta">Checked {formatDateTime(props.freshness.lastScanAt)}{summary}{rate}</p></div><div class="header-actions"><Link class="button icon-button" href="/settings" aria-label="Settings" title="Settings"><svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.25a3.75 3.75 0 1 1 0 7.5 3.75 3.75 0 0 1 0-7.5Zm0-5 1.12 2.35 2.52.36-1.82 1.78.43 2.51L12 9.07l-2.25 1.18.43-2.51-1.82-1.78 2.52-.36L12 3.25Z" /><path d="M4.5 13.2v-2.4l2.1-.75c.18-.56.41-1.1.7-1.6L6.35 6.4l1.7-1.7 2.05.95c.5-.28 1.03-.52 1.6-.7l.75-2.1h2.4l.75 2.1c.56.18 1.1.42 1.6.7l2.05-.95 1.7 1.7-.95 2.05c.28.5.52 1.04.7 1.6l2.1.75v2.4l-2.1.75c-.18.56-.42 1.1-.7 1.6l.95 2.05-1.7 1.7-2.05-.95c-.5.29-1.04.52-1.6.7l-.75 2.1h-2.4l-.75-2.1a8.2 8.2 0 0 1-1.6-.7l-2.05.95-1.7-1.7.95-2.05a8.2 8.2 0 0 1-.7-1.6l-2.1-.75Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /></svg></Link><Form method="post" action="/refresh" data-refresh-form>{({ processing }: { processing: boolean }) => <><button class="button primary" type="submit" data-idle-label="Manual refresh" aria-busy={processing || undefined}>{processing ? 'Refreshing...' : 'Manual refresh'}</button><span class="refresh-pending-note" role="status" aria-live="polite" hidden={!processing}>Refreshing...</span></>}</Form></div></div>;
 }
 
-export function SettingsHeader(props: any) {
+export function SettingsHeader(props: { signedInAs: string }) {
   return <div class="header-extra"><div><p class="eyebrow">{props.signedInAs}</p><strong>Settings</strong><p class="header-meta">Tune your inbox rhythm.</p></div><Link class="button ghost" href="/dashboard">Inbox</Link></div>;
 }
 

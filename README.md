@@ -123,6 +123,30 @@ npx wrangler deploy
 
 When resolving conflicts, preserve your fork's deployment-specific Cloudflare config: Worker name, D1 database ID, queue names, secrets, and OAuth settings.
 
+## Local ship-readiness check
+
+A single command runs the full pre-deploy verification on a fresh checkout:
+
+```bash
+npm install
+npm run ship-check
+```
+
+It executes, stopping on the first failure:
+
+1. Playwright Chromium install (skipped if already present — needed for the browser E2E)
+2. `wrangler types` — regenerates `worker-configuration.d.ts` from `wrangler.jsonc`
+3. `tsc --noEmit` — strict TypeScript check
+4. `vite build` — production client + worker build
+5. `vitest run` — full test suite: routes, scanner, queue producer + consumer, cron handler, contract tests, and Playwright-driven browser E2E against `vite preview` (real production worker in real workerd against real D1, with real Inertia hydration)
+
+If every step passes, the suite has covered everything that can be verified without a live Cloudflare account. What it does **not** cover (requires hands-on verification on a real deploy):
+
+- `wrangler deploy` succeeds and the worker boots on your account
+- GitHub OAuth round-trip (login → callback → dashboard) with your real OAuth App
+- A cron tick on real Cloudflare produces a scan_run with `trigger=cron`
+- Manual refresh drains the real Queues broker (visible on `/runs`)
+
 ## Maintainer releases
 
 Maintainers can publish a tagged GitHub release with generated notes and coding-agent update instructions:

@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "types:cf": "wrangler types",
     "verify": "npm run types:cf && npm run typecheck && npm test",
+    "ship-check": "node scripts/ship-check.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "dev": "vite",

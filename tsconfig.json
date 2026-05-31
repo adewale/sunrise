@@ -4,11 +4,12 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
-    "types": ["vitest/globals", "vite/client", "node"],
+    "types": ["vitest/globals", "node", "vite/client", "@cloudflare/vitest-pool-workers/types"],
     "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
     "noEmit": true,
-    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true
   },
-  "include": ["src", "test", "app", "worker-configuration.d.ts", "vite.config.ts"]
+  "include": ["src", "test", "app", "worker-configuration.d.ts"]
 }

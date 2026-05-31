@@ -1,14 +1,12 @@
 import { defineConfig } from 'vite';
+import { cloudflare } from '@cloudflare/vite-plugin';
 import { inertiaPages } from '@hono/inertia/vite';
+import ssrPlugin from 'vite-ssr-components/plugin';
 
 export default defineConfig({
-  plugins: [inertiaPages({ pagesDir: 'app/pages', outFile: 'app/pages.gen.ts', serverModule: '../src/app' })],
-  build: {
-    manifest: true,
-    outDir: 'dist/client',
-    rollupOptions: {
-      input: 'src/client.tsx',
-      output: { entryFileNames: 'sunrise-inertia-client.js' },
-    },
-  },
+  plugins: [
+    inertiaPages({ exclude: ['Layout', '_shared'], serverModule: '../src/app' }),
+    cloudflare(),
+    ssrPlugin(),
+  ],
 });

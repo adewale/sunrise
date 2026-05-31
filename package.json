@@ -1,6 +1,6 @@
 {
   "name": "sunrise",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Self-hosted GitHub action dashboard on Cloudflare.",
   "type": "module",
@@ -9,9 +9,11 @@
     "typecheck": "tsc --noEmit",
     "types:cf": "wrangler types",
     "verify": "npm run types:cf && npm run typecheck && npm test",
-    "build": "npm run typecheck",
-    "dev": "wrangler dev",
-    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "ship-check": "node scripts/ship-check.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "dev": "vite",
+    "deploy": "wrangler d1 migrations apply DB --remote && vite build && wrangler deploy",
     "fixtures:capture": "node scripts/capture-github-fixtures.mjs",
     "screenshots:capture": "node scripts/capture-screenshots.mjs",
     "release": "node scripts/release.mjs"
@@ -34,17 +36,18 @@
   },
   "dependencies": {
     "@hono/inertia": "^0.2.0",
-    "@inertiajs/react": "^3.0.3",
-    "hono": "^4.12.16",
-    "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "hono": "^4.12.16"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.38.0",
+    "@cloudflare/vitest-pool-workers": "^0.16.10",
+    "@inertiajs/core": "^3.2.0",
+    "@ts-76/inertia-hono-jsx": "^0.2.3",
     "@types/node": "^25.6.0",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
     "playwright": "^1.59.1",
     "typescript": "^6.0.3",
+    "vite": "^8.0.14",
+    "vite-ssr-components": "^0.6.1",
     "vitest": "^4.1.5",
     "wrangler": "^4.87.0"
   }

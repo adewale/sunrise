@@ -17,7 +17,7 @@ async function runScheduledDiscovery(env: Env) {
 
 export default {
   fetch: app.fetch,
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(runScheduledDiscovery(env));
   },
   async queue(batch: MessageBatch<QueueMessage>, env: Env) {

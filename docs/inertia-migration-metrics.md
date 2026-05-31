@@ -74,3 +74,17 @@ node ./compare-sunrise-visual.mjs
 ```
 
 The Playwright script was temporary and removed after recording the artifacts/summary.
+
+## Follow-up (2026-05-21): superseded by the hono/jsx single-source migration
+
+The numbers above describe the first step, which deliberately kept the old string
+renderer and only added Inertia protocol wiring. That dual path was later removed:
+
+- Page bodies and shared components are now single-source `hono/jsx` components in
+  `app/pages/`. The string-template renderers in `src/app.ts` were deleted.
+- A brief React experiment was dropped; there is no `react`, `@inertiajs/react`, or
+  Vite. Rendering is `hono/jsx` SSR (`jsxImportSource: hono/jsx`) with a hand-rolled
+  `X-Inertia` progressive client. `src/app.ts` was renamed to `src/app.tsx`.
+
+See `lessons-learned.md` §21–§22 and the UI/Inertia section of
+`spec-implementation-audit.md` for the current architecture.

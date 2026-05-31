@@ -5,9 +5,9 @@ export type PageName = 'Changelog' | 'Dashboard' | 'Design' | 'Item' | 'Landing'
 
 declare module '@hono/inertia' {
   interface InertiaPages {
+    'Changelog': unknown
     'Dashboard': unknown
     'Design': unknown
-    'Changelog': unknown
     'Item': unknown
     'Landing': unknown
     'Runs': unknown

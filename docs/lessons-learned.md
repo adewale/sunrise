@@ -26,7 +26,7 @@ Why: using `panel` alone caused content to sit against the card edge because it 
 
 ## 2. The design page must reuse real components
 
-The public `/design` page exists to reveal drift. When possible, use shared render helpers or React components such as:
+The public `/design` page exists to reveal drift. When possible, use the shared `hono/jsx` components such as:
 
 - metrics/stat components;
 - inbox row components;
@@ -285,36 +285,45 @@ A personal GitHub inbox needs both notification pagination and search-backed dis
 
 Dedupe by canonical subject key after combining sources. The UI should then present one reverse-chronological inbox, not one panel per API endpoint.
 
-## 21. Use the Hono/Inertia example as architecture, not just dependency proof
+## 21. Inertia protocol does not require React or Vite
 
-Starting with `@hono/inertia` installed is not the same as building an Inertia app. The useful pattern from `yusukebe/hono-inertia-example` is structural:
+> **Superseded (2026-05-24).** Sunrise has since moved to the full Vite setup:
+> `@cloudflare/vite-plugin` + `vite-ssr-components` build the worker and a real
+> client bundle (`app/client.tsx`), and `@ts-76/inertia-hono-jsx` does real
+> `hono/jsx/dom` hydration via `createInertiaApp`. SSR now runs through
+> `app/ssr.tsx` (`renderPage` + `import.meta.glob`), the document shell is
+> `app/root-view.tsx`, CSS lives in `app/styles.css`, and the persistent chrome
+> is a `Layout` component. The hand-rolled `/assets/sunrise-inertia-client.js`
+> bundle and the inline document-shell string are gone. The notes below describe
+> the earlier no-build approach and are kept for history.
+
+Starting with `@hono/inertia` installed is not the same as committing to the classic Inertia SPA stack. Sunrise uses the Inertia *protocol* on the wire but renders with Hono's built-in JSX runtime and no client framework. The structure that worked:
 
 ```txt
-app/server.ts       → Hono routes call c.render(page, props)
-app/root-view.tsx   → complete HTML shell
-app/ssr.tsx         → render Inertia page with React SSR
-app/client.tsx      → hydrateRoot/createInertiaApp
-app/pages/*.tsx     → page components
-app/pages.gen.ts    → generated page-name registry
-vite.config.ts      → inertiaPages + SSR/client build plugins
+src/app.tsx         → Hono routes call c.render(page, props); also holds
+                      the rootView, the document-shell string, and asset routes
+app/pages/*.tsx     → page components (hono/jsx, default export per page)
+app/pages/_shared.tsx → shared components: item rows, stats, setup checks,
+                      and the page-specific header fragments
+app/pages.gen.ts    → page-name registry that types c.render(...)
 ```
 
-Sunrise first built string-rendered HTML and later migrated. That preserved Cloudflare/product correctness early, but it created extraction debt: routes, shell, page bodies, styles, and tiny client navigation all lived together in `src/app.ts` for too long.
+`tsconfig` sets `jsx: react-jsx` + `jsxImportSource: hono/jsx`. There is no `react`, no `@inertiajs/react`, no `app/ssr.tsx` / `app/client.tsx`, and no Vite. The `rootView` SSRs the page component with `(<Component {...props} />).toString()` and embeds the page object via `serializePage`. A small hand-written progressive bundle (`/assets/sunrise-inertia-client.js`) speaks `X-Inertia` and swaps the header, `#content`, and the data-page script — no `hydrateRoot`/`createInertiaApp`.
 
-If starting over, begin with the example's file split even if the first pages are simple.
+Sunrise first built string-rendered HTML, then briefly added React page components, then settled on `hono/jsx`. The detour created extraction debt: routes, shell, page bodies, styles, and client navigation all lived together in `src/app.ts` for too long. If starting over, begin with the `app/pages/` split even if the first pages are simple.
 
-## 22. React pages must own visible page bodies
+## 22. Each page body needs exactly one source
 
-Placeholder page files satisfy type registration but do not reduce UI drift. The useful migration step is: each page component renders the visible body for that page.
+Placeholder page files satisfy type registration but do not reduce UI drift; a string renderer kept "for now" alongside a component renderer is worse, because the two drift apart and tests only cover one. The rule that held: each visible page body has one source of truth — a `hono/jsx` component.
 
-Good interim state:
+The settled architecture:
 
 - Hono routes compute props.
-- `rootView` renders header/root shell.
-- React page components render page bodies.
-- Shared page components render stats, items, setup checks, and operations rows.
+- `rootView` SSRs the page component and assembles the document shell.
+- Page components render page bodies; shared components render stats, items, setup checks, and operations rows; the same components back both the live page and the `/design` page.
+- The document shell stays a string template (a large static CSS/font/theme blob), which is fine because it is not duplicated anywhere.
 
-Avoid passing a pre-rendered HTML blob through `dangerouslySetInnerHTML` except as a temporary bridge. It hides duplicated markup and prevents component tests from catching drift.
+Do not bridge a pre-rendered HTML blob through `dangerouslySetInnerHTML` to "reuse" string markup inside a component — it hides duplicated markup and prevents component tests from catching drift. Render the component directly, or `.toString()` it once at a real string boundary (e.g. an error page built with the `html()` helper).
 
 ## 23. Queue broker metrics and app-state metrics are different
 
@@ -528,3 +537,13 @@ Regression tests should assert card URLs are human-facing. Existing stale rows m
 Repository names are context and navigation. If a card shows `owner/repo`, users expect it to open that repository.
 
 Make repo chips links to GitHub and keep them visually chip-like. This improves skimming and avoids forcing users to infer or copy repository URLs.
+
+## 36. Test fidelity, not just coverage
+
+A green suite hid three bugs because the tests didn't faithfully represent reality. All three were fidelity gaps, in different layers:
+
+- **Runtime fidelity.** The Playwright check rendered `setContent(staticHtml)` — an SSR snapshot — and never executed the client bundle. Client-only behavior (the theme toggle going inert after a header swap, a redundant navigation round-trip, a stale `data-page`) was invisible. Fix: a live-server E2E that serves the real app (`@hono/node-server`) and drives a real navigation in the browser, asserting one document load, one page request, the toggle still flips, and `data-page` updates.
+- **Data-layer fidelity.** The test DB was a hand-written fake that ignored `WHERE id = ?` (and tolerated extra bind params and missing NOT NULL columns), so tests could pass against SQL that D1 would reject. Fix: back the test DB with real in-memory SQLite loaded from the production migrations (`node:sqlite`). Real query semantics for free; the swap immediately surfaced several invalid test inserts.
+- **Oracle fidelity.** The client bundle was tested by asserting on its source text (`toContain('X-Inertia')`), which verifies the string, not the behavior. Fix: assert observable outcomes (request counts, DOM swap, toggle effect) in the E2E.
+
+Rule of thumb: prefer the real engine over a fake; when a test depends on the test environment enforcing a constraint, make sure the environment actually enforces it — otherwise the double becomes a yes-man and the suite reports false green. Also confirm new behavioral guards go *red* with the bug reintroduced, so you know the test can fail.

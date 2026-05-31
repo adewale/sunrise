@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { env } from 'cloudflare:test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runDiscovery } from '../src/scanner';
-import type { Env } from '../src/env';
-import { createMemoryDb } from './memory-db';
 
 describe('GitHub enrichment fixtures', () => {
+  // Exercise inline scanning, not the queue dispatch path.
+  beforeEach(() => { (env as any).GITHUB_QUEUE = undefined; });
   afterEach(() => vi.restoreAllMocks());
 
   it('classifies authored PR check-run failures as broken authored work', async () => {
@@ -22,12 +23,10 @@ describe('GitHub enrichment fixtures', () => {
       if (u.includes('/rate_limit')) return Response.json({ resources: { core: { remaining: 4999, reset: 1770000000 } } });
       return Response.json([]);
     }));
-    const db = createMemoryDb();
-    await runDiscovery({ DB: db, OWNER_LOGIN: 'ade' } as unknown as Env, 'manual', 'token');
-    const items = await db.prepare('SELECT * FROM action_items').all<Record<string, any>>();
+    await runDiscovery(env, 'manual', 'token');
+    const items = await env.DB.prepare('SELECT * FROM action_items').all<Record<string, any>>();
     expect(items.results.map((r) => r.kind)).toContain('authored_pr_failing');
   });
-
 });
 
 function prIssue(title: string, htmlUrl: string) {

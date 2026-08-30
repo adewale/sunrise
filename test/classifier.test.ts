@@ -1,6 +1,7 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { classifyChange, dedupeActionItems, orderActionItems } from '../src/classifier';
-import type { GitHubChange } from '../src/types';
+import type { ActionKind, GitHubChange } from '../src/types';
 
 const base = {
   id: 'c1',
@@ -44,5 +45,39 @@ describe('classifier', () => {
       classifyChange({ ...base, id: 'mention', canonicalSubjectKey: 'c', updatedAt: '2026-05-01T10:00:00Z', raw: { reason: 'mention', title: 'Mention' } }, 'ade')!,
     ];
     expect(orderActionItems(items).map((i) => i.id)).toEqual(['assigned', 'mention', 'old-author']);
+  });
+
+  it('keeps direct notification reasons ahead of authored PR state', () => {
+    const expectedKinds = {
+      review_requested: 'review_requested',
+      assign: 'assigned',
+      mention: 'mention',
+      team_mention: 'mention',
+      security_alert: 'security_alert',
+    } as const satisfies Record<string, ActionKind>;
+
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...Object.keys(expectedKinds) as (keyof typeof expectedKinds)[]),
+        fc.constantFrom('failure', 'pending', 'success'),
+        fc.constantFrom('conflicting', 'mergeable', 'unknown'),
+        (reason, checks, mergeable) => {
+          const item = classifyChange({
+            ...base,
+            raw: {
+              reason,
+              author: 'ade',
+              checks,
+              mergeable,
+              latestReviewState: 'CHANGES_REQUESTED',
+              staleGreen: true,
+            },
+          }, 'ade');
+
+          expect(item?.kind).toBe(expectedKinds[reason]);
+        },
+      ),
+      { numRuns: 100 },
+    );
   });
 });

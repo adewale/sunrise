@@ -357,13 +357,53 @@ function repoAlertChange(runId: string, repo: string, endpoint: string, title: s
   return { id: crypto.randomUUID(), runId, canonicalSubjectKey: `github:${repo}:${endpoint}:${title}`, sourceEndpoint: endpoint, repo, subjectType: endpoint.includes('actions') ? 'WorkflowRun' : 'SecurityAlert', subjectUrl: htmlUrl, htmlUrl: htmlUrl || `https://github.com/${repo}`, updatedAt: updatedAt ?? new Date().toISOString(), raw: { title, ...raw } };
 }
 
-function dedupeChanges(changes: GitHubChange[]): GitHubChange[] {
+export function dedupeChanges(changes: GitHubChange[]): GitHubChange[] {
   const byKey = new Map<string, GitHubChange>();
   for (const change of changes) {
     const existing = byKey.get(change.canonicalSubjectKey);
-    if (!existing || changeSpecificity(change) > changeSpecificity(existing) || (changeSpecificity(change) === changeSpecificity(existing) && Date.parse(change.updatedAt) > Date.parse(existing.updatedAt))) byKey.set(change.canonicalSubjectKey, change);
+    if (!existing || compareChangesForDedupe(change, existing) < 0) byKey.set(change.canonicalSubjectKey, change);
   }
-  return [...byKey.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  return [...byKey.values()].sort(compareChangesNewestFirst);
+}
+
+function compareChangesForDedupe(a: GitHubChange, b: GitHubChange): number {
+  return changeSpecificity(b) - changeSpecificity(a)
+    || compareTimestampsNewestFirst(a.updatedAt, b.updatedAt)
+    || compareChangeIdentity(a, b);
+}
+
+function compareChangesNewestFirst(a: GitHubChange, b: GitHubChange): number {
+  return compareTimestampsNewestFirst(a.updatedAt, b.updatedAt)
+    || compareStrings(a.canonicalSubjectKey, b.canonicalSubjectKey)
+    || compareChangeIdentity(a, b);
+}
+
+function compareChangeIdentity(a: GitHubChange, b: GitHubChange): number {
+  return compareStrings(a.sourceEndpoint, b.sourceEndpoint)
+    || compareStrings(a.repo, b.repo)
+    || compareStrings(a.subjectType, b.subjectType)
+    || compareStrings(a.subjectUrl, b.subjectUrl)
+    || compareStrings(a.htmlUrl, b.htmlUrl)
+    || compareStrings(JSON.stringify(a.raw), JSON.stringify(b.raw))
+    || compareStrings(a.id, b.id)
+    || compareStrings(a.runId, b.runId);
+}
+
+function compareTimestampsNewestFirst(a: string, b: string): number {
+  const aTimestamp = Date.parse(a);
+  const bTimestamp = Date.parse(b);
+  const aIsValid = Number.isFinite(aTimestamp);
+  const bIsValid = Number.isFinite(bTimestamp);
+  if (aIsValid && bIsValid) return bTimestamp - aTimestamp || compareStrings(a, b);
+  if (aIsValid) return -1;
+  if (bIsValid) return 1;
+  return compareStrings(a, b);
+}
+
+function compareStrings(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
 }
 
 function changeSpecificity(change: GitHubChange): number {

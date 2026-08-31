@@ -1,12 +1,105 @@
 import { env } from 'cloudflare:test';
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { runDiscovery } from '../src/scanner';
+import { dedupeChanges, runDiscovery } from '../src/scanner';
+import type { GitHubChange } from '../src/types';
+
+const sourceEndpointArbitrary = fc.constantFrom(
+  'notifications',
+  'search/review-requests',
+  'search/assigned',
+  'search/authored-prs',
+  'search/created-issues',
+  'search/owned-repo-prs',
+  'search/involved',
+);
+
+const equalSpecificityEndpointArbitrary = fc.constantFrom(
+  'search/review-requests',
+  'search/assigned',
+  'search/created-issues',
+);
+
+const timestampArbitrary = fc.oneof(
+  fc.integer({ min: 0, max: 4_102_444_800_000 }).map((timestamp) => new Date(timestamp).toISOString()),
+  fc.constantFrom('', 'not-a-date', 'invalid timestamp'),
+);
+
+const githubChangeArbitrary = fc.record({
+  id: fc.uuid(),
+  runId: fc.uuid(),
+  canonicalSubjectKey: fc.integer({ min: 0, max: 12 }).map((key) => `github:owner/repo:issue:${key}`),
+  sourceEndpoint: sourceEndpointArbitrary,
+  updatedAt: timestampArbitrary,
+  title: fc.string({ maxLength: 40 }),
+}).map(({ id, runId, canonicalSubjectKey, sourceEndpoint, updatedAt, title }): GitHubChange => ({
+  id,
+  runId,
+  canonicalSubjectKey,
+  sourceEndpoint,
+  repo: 'owner/repo',
+  subjectType: 'Issue',
+  subjectUrl: `https://api.github.com/repos/${canonicalSubjectKey}`,
+  htmlUrl: `https://github.com/${canonicalSubjectKey}`,
+  updatedAt,
+  raw: { title },
+}));
 
 describe('GitHub discovery', () => {
   // By default, exercise inline scanning (write directly to action_items). The
   // 'uses sendBatch' test re-sets GITHUB_QUEUE to its own mock.
   beforeEach(() => { (env as any).GITHUB_QUEUE = undefined; });
   afterEach(() => vi.restoreAllMocks());
+
+  it('deduplicates production discovery inputs independently of source order', () => {
+    fc.assert(
+      fc.property(fc.array(fc.record({ change: githubChangeArbitrary, rank: fc.integer() }), { maxLength: 80 }), (rankedChanges) => {
+        const changes = rankedChanges.map(({ change }) => change);
+        const reordered = [...rankedChanges]
+          .sort((a, b) => a.rank - b.rank)
+          .map(({ change }) => change);
+        const canonical = dedupeChanges(changes);
+
+        expect(dedupeChanges(reordered)).toEqual(canonical);
+        expect(dedupeChanges([...changes].reverse())).toEqual(canonical);
+        expect(dedupeChanges(canonical)).toEqual(canonical);
+        expect(new Set(canonical.map((change) => change.canonicalSubjectKey)).size).toBe(canonical.length);
+      }),
+      { numRuns: 250 },
+    );
+  });
+
+  it('uses a total tie-break for malformed timestamps on the production dedupe path', () => {
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(fc.uuid(), { minLength: 2, maxLength: 2 }),
+        fc.tuple(equalSpecificityEndpointArbitrary, equalSpecificityEndpointArbitrary),
+        fc.tuple(fc.constantFrom('', 'not-a-date', 'invalid timestamp'), fc.constantFrom('', 'not-a-date', 'invalid timestamp')),
+        ([firstId, secondId], [firstEndpoint, secondEndpoint], [firstTimestamp, secondTimestamp]) => {
+          const makeChange = (id: string, sourceEndpoint: string, updatedAt: string): GitHubChange => ({
+            id,
+            runId: 'run',
+            canonicalSubjectKey: 'github:owner/repo:issue:malformed-date',
+            sourceEndpoint,
+            repo: 'owner/repo',
+            subjectType: 'Issue',
+            subjectUrl: 'https://api.github.com/repos/owner/repo/issues/1',
+            htmlUrl: 'https://github.com/owner/repo/issues/1',
+            updatedAt,
+            raw: { title: id },
+          });
+          const changes = [
+            makeChange(firstId, firstEndpoint, firstTimestamp),
+            makeChange(secondId, secondEndpoint, secondTimestamp),
+          ];
+
+          expect(dedupeChanges(changes)).toHaveLength(1);
+          expect(dedupeChanges([...changes].reverse())).toEqual(dedupeChanges(changes));
+        },
+      ),
+      { numRuns: 250 },
+    );
+  });
 
   it('paginates notifications and discovers open issues, PRs, and involved threads', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {

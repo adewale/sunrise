@@ -121,22 +121,102 @@ describe('GitHub discovery', () => {
     expect(runs.results.some((run) => run.status === 'no_change')).toBe(true);
   });
 
-  it('uses GitHub ETags to detect an unchanged snapshot early', async () => {
-    let calls = 0;
+  it('detects an unchanged snapshot, even an empty one, without conditional requests', async () => {
+    const conditional: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       const u = String(url);
-      if (u.includes('/notifications')) {
-        calls++;
-        if ((init?.headers as Record<string, string>)?.['If-None-Match']) return new Response(null, { status: 304 });
-        return Response.json([], { headers: { etag: '"notifications-v1"' } });
-      }
+      if ((init?.headers as Record<string, string> | undefined)?.['If-None-Match']) conditional.push(u);
+      if (u.includes('/notifications')) return Response.json([], { headers: { etag: '"notifications-v1"' } });
       if (u.includes('/search/issues')) return search([]);
       return Response.json([]);
     }));
     await runDiscovery(env, 'manual', 'token');
     const second = await runDiscovery(env, 'manual', 'token') as any;
-    expect(calls).toBeGreaterThan(1);
     expect(second.noChange).toBe(true);
+    expect(conditional).toEqual([]);
+  });
+
+  it('keeps cards from a search GitHub reports as unchanged while other sources change', async () => {
+    let run = 1;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      const ifNoneMatch = (init?.headers as Record<string, string> | undefined)?.['If-None-Match'];
+      if (u.includes('/notifications')) {
+        const items = [notification('mention', 'First mention', 'https://api.github.com/repos/o/r/issues/1', '2026-05-01T10:00:00Z')];
+        if (run === 2) items.push(notification('mention', 'Second mention', 'https://api.github.com/repos/o/r/issues/2', '2026-05-02T10:00:00Z'));
+        return Response.json(items, { headers: { etag: `"notifications-${run}"` } });
+      }
+      if (u.includes('/search/issues')) {
+        const query = decodeURIComponent(new URL(u).searchParams.get('q') ?? '');
+        if (query === 'is:pr is:open author:ade archived:false') {
+          if (ifNoneMatch === '"authored-v1"') return new Response(null, { status: 304 });
+          return Response.json({ total_count: 1, items: [issue('My open PR', 'https://github.com/o/r/pull/5', '2026-05-01T08:00:00Z', 'ade')] }, { headers: { etag: '"authored-v1"' } });
+        }
+        return search([]);
+      }
+      return Response.json([]);
+    }));
+
+    await runDiscovery(env, 'manual', 'token');
+    run = 2;
+    await runDiscovery(env, 'manual', 'token');
+
+    const items = await env.DB.prepare('SELECT * FROM action_items').all<Record<string, any>>();
+    expect(items.results.map((row) => row.title)).toEqual(expect.arrayContaining(['My open PR', 'Second mention']));
+  });
+
+  it('removes resolved cards even when every other source is unchanged', async () => {
+    let run = 1;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      const ifNoneMatch = (init?.headers as Record<string, string> | undefined)?.['If-None-Match'];
+      if (u.includes('/notifications')) {
+        if (ifNoneMatch === '"notifications-v1"') return new Response(null, { status: 304 });
+        return Response.json([], { headers: { etag: '"notifications-v1"' } });
+      }
+      if (u.includes('/search/issues')) {
+        const query = decodeURIComponent(new URL(u).searchParams.get('q') ?? '');
+        if (query.includes('review-requested:ade')) {
+          const items = run === 1 ? [issue('Review me', 'https://github.com/o/r/pull/3', '2026-05-01T12:00:00Z', 'teammate')] : [];
+          return Response.json({ total_count: items.length, items }, { headers: { etag: `"reviews-${run}"` } });
+        }
+        return search([]);
+      }
+      return Response.json([]);
+    }));
+
+    await runDiscovery(env, 'manual', 'token');
+    expect((await env.DB.prepare("SELECT * FROM action_items WHERE kind = 'review_requested'").all()).results).toHaveLength(1);
+    run = 2;
+    await runDiscovery(env, 'manual', 'token');
+
+    expect((await env.DB.prepare("SELECT * FROM action_items WHERE kind = 'review_requested'").all()).results).toHaveLength(0);
+  });
+
+  it('keeps workflow failures from repos GitHub reports as unchanged', async () => {
+    let run = 1;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      const ifNoneMatch = (init?.headers as Record<string, string> | undefined)?.['If-None-Match'];
+      if (u.includes('/user/repos')) return Response.json([{ full_name: 'ade/a', owner: { login: 'ade' } }, { full_name: 'ade/b', owner: { login: 'ade' } }]);
+      if (u.includes('/repos/ade/a/actions/runs')) {
+        if (ifNoneMatch === '"runs-a-v1"') return new Response(null, { status: 304 });
+        return Response.json({ workflow_runs: [{ name: 'CI', html_url: 'https://github.com/ade/a/actions/runs/1', updated_at: '2026-05-01T10:00:00Z' }] }, { headers: { etag: '"runs-a-v1"' } });
+      }
+      if (u.includes('/repos/ade/b/actions/runs')) {
+        const runs = run === 1 ? [] : [{ name: 'Deploy', html_url: 'https://github.com/ade/b/actions/runs/2', updated_at: '2026-05-02T10:00:00Z' }];
+        return Response.json({ workflow_runs: runs }, { headers: { etag: `"runs-b-${run}"` } });
+      }
+      if (u.includes('/search/issues')) return search([]);
+      return Response.json([]);
+    }));
+
+    await runDiscovery(env, 'manual', 'token');
+    run = 2;
+    await runDiscovery(env, 'manual', 'token');
+
+    const items = await env.DB.prepare("SELECT * FROM action_items WHERE kind = 'workflow_failure'").all<Record<string, any>>();
+    expect(items.results.map((row) => row.repo).sort()).toEqual(['ade/a', 'ade/b']);
   });
 
   it('uses sendBatch when a queue binding is available', async () => {
@@ -153,6 +233,47 @@ describe('GitHub discovery', () => {
     expect(queue.send).not.toHaveBeenCalled();
     const run = (await env.DB.prepare('SELECT * FROM scan_runs').first<Record<string, any>>())!;
     expect(run.processed_count ?? 0).toBe(0);
+  });
+
+  it('refreshes the People panel snapshot without adding feed cards', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/search/issues')) {
+        const query = decodeURIComponent(new URL(u).searchParams.get('q') ?? '');
+        if (query === 'is:open user:ade -author:ade archived:false') {
+          return search([{ ...issue('Question from a user', 'https://github.com/ade/r/issues/3', '2026-05-01T09:00:00Z', 'reporter'), number: 3, repository_url: 'https://api.github.com/repos/ade/r', created_at: '2026-05-01T09:00:00Z', comments: 0 }]);
+        }
+        return search([]);
+      }
+      return Response.json([]);
+    }));
+
+    const result = await runDiscovery(env, 'manual', 'token');
+
+    const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'people_threads'").first<Record<string, string>>();
+    expect(JSON.parse(row!.value).threads).toEqual([expect.objectContaining({ waitingOn: 'you', person: 'reporter', repo: 'ade/r', number: 3, since: '2026-05-01T09:00:00Z' })]);
+    expect(result.candidateCount).toBe(0);
+    const items = await env.DB.prepare('SELECT * FROM action_items').all();
+    expect(items.results).toHaveLength(0);
+  });
+
+  it('keeps the previous People snapshot when GitHub fails', async () => {
+    const previous = JSON.stringify({ updatedAt: '2026-05-01T00:00:00Z', threads: [{ waitingOn: 'you', person: 'reporter', repo: 'ade/r', number: 3, title: 'Question', url: 'https://github.com/ade/r/issues/3', since: '2026-05-01T09:00:00Z' }] });
+    await env.DB.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)').bind('people_threads', previous, '2026-05-01T00:00:00Z').run();
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/search/issues')) {
+        const query = decodeURIComponent(new URL(u).searchParams.get('q') ?? '');
+        const peopleQueries = ['is:open user:ade -author:ade archived:false', 'is:open author:ade -user:ade archived:false'];
+        return peopleQueries.includes(query) ? new Response('unavailable', { status: 502 }) : search([]);
+      }
+      return Response.json([]);
+    }));
+
+    await runDiscovery(env, 'manual', 'token');
+
+    const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'people_threads'").first<Record<string, string>>();
+    expect(row!.value).toBe(previous);
   });
 });
 

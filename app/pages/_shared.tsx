@@ -1,6 +1,6 @@
 import { Link, Form } from '@ts-76/inertia-hono-jsx';
 import type { GitHubActionItem } from '../../src/types';
-import type { DashboardProps, SetupCheck, SetupDiagnostics } from '../../src/app';
+import type { DashboardProps, PeoplePanel, PeopleRow, SetupCheck, SetupDiagnostics } from '../../src/app';
 
 type ActionItem = GitHubActionItem;
 
@@ -10,6 +10,17 @@ export function Stat({ label, value }: { label: string; value: string | number }
 
 export function UnresolvedLink({ row }: { row: { label: string; count: number; href: string; query?: string } }) {
   return <a class="stat unresolved-link" href={row.href} target="_blank" rel="noreferrer" title={row.query ? `Opens GitHub: ${row.query}` : 'Opens GitHub'}><span>{row.label}<em>Open in GitHub</em></span><strong>{row.count} ↗</strong></a>;
+}
+
+export function PeopleCard({ people }: { people: PeoplePanel | undefined }) {
+  const groups: [string, PeopleRow[]][] = [['Waiting on you', people?.waitingOnYou ?? []], ['You’re waiting on', people?.waitingOnThem ?? []]];
+  if (!groups.some(([, rows]) => rows.length)) return null;
+  return <section class="panel stat-card people-card"><p class="eyebrow">People</p>{groups.map(([label, rows]) => rows.length ? <div class="people-group"><h3>{label}</h3><ul class="people-list">{rows.map((row) => <PeopleListRow row={row} />)}</ul></div> : null)}</section>;
+}
+
+function PeopleListRow({ row }: { row: PeopleRow }) {
+  const repoName = row.repo.split('/')[1] || row.repo;
+  return <li class="people-row"><img class="people-avatar" src={`https://github.com/${row.person}.png?size=40`} alt="" loading="lazy" /><span class="people-who"><strong>{row.person}</strong><span class="people-items" title={row.repo}>{repoName} {row.items.map((item, index) => <>{index ? ', ' : ''}<a href={item.url} target="_blank" rel="noreferrer" title={item.title}>#{item.number}</a></>)}</span></span><time class="people-age" datetime={row.since} title={`Waiting since ${formatDateTime(row.since)}`}>{waitAge(row.since)}</time></li>;
 }
 
 export function SetupChecks({ checks }: { checks: SetupCheck[] }) {
@@ -65,6 +76,15 @@ export function formatDateTime(value: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
+}
+
+function waitAge(value: string) {
+  const days = Math.floor((Date.now() - Date.parse(value)) / 86400000);
+  if (Number.isNaN(days)) return '';
+  if (days < 1) return 'today';
+  if (days < 365) return `${days}d`;
+  if (days < 730) return `${Math.floor(days / 30.44)}mo`;
+  return `${Math.floor(days / 365.25)}y`;
 }
 
 function relativeTime(value: string) {

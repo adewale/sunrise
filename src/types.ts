@@ -52,6 +52,16 @@ export type GitHubChange = {
   raw: Record<string, unknown>;
 };
 
+export type PeopleThread = {
+  waitingOn: 'you' | 'them';
+  person: string;
+  repo: string;
+  number: number;
+  title: string;
+  url: string;
+  since: string;
+};
+
 export type QueueMessage =
   | { kind: 'process-github-change'; runId: string; changeId: string }
   | { kind: 'setup-diagnostic'; diagnosticId: string; createdAt: string };

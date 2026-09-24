@@ -17,6 +17,29 @@ describe('route prop contracts', () => {
     expect(props.counts).toMatchObject({ pullRequests: 1, issues: 0 });
     expect(props.unresolvedLinks).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'review-requests', href: 'https://github.com/pulls/review-requested' })]));
     expect(props.pagination).toMatchObject({ page: 1, pageSize: 50, totalItems: 1 });
+    expect(props.people).toEqual({ waitingOnYou: [], waitingOnThem: [] });
+  });
+
+  it('groups People panel threads by person and repo, longest wait first', async () => {
+    await signIn();
+    const thread = (waitingOn: string, person: string, repo: string, number: number, since: string) => ({ waitingOn, person, repo, number, title: `${repo}#${number}`, url: `https://github.com/${repo}/pull/${number}`, since });
+    const threads = [
+      thread('them', 'maintainer', 'maintainer/project', 2, '2025-10-16T00:00:00Z'),
+      thread('them', 'maintainer', 'maintainer/project', 1, '2025-10-15T00:00:00Z'),
+      thread('you', 'reviewer', 'other/app', 10, '2026-04-21T18:00:00Z'),
+      thread('you', 'reporter', 'ade/scanner', 6, '2026-02-09T00:00:00Z'),
+    ];
+    await env.DB.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)').bind('people_threads', JSON.stringify({ updatedAt: '2026-09-01T00:00:00Z', threads }), '2026-09-01T00:00:00Z').run();
+    const res = await SELF.fetch('http://example.com/dashboard?json', { headers: { Cookie: 'sunrise_session=sid' } });
+    const props = await res.json() as any;
+    expect(props.people.waitingOnYou.map((row: any) => row.person)).toEqual(['reporter', 'reviewer']);
+    expect(props.people.waitingOnThem).toEqual([{
+      id: 'them:maintainer:maintainer/project',
+      person: 'maintainer',
+      repo: 'maintainer/project',
+      since: '2025-10-15T00:00:00Z',
+      items: [expect.objectContaining({ number: 1 }), expect.objectContaining({ number: 2 })],
+    }]);
   });
 
   it('returns stable runs props including queue and a non-refreshing notice', async () => {

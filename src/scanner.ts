@@ -4,6 +4,7 @@ import type { GitHubChange, QueueMessage } from './types';
 type ProcessGitHubChangeMessage = Extract<QueueMessage, { kind: 'process-github-change' }>;
 import { classifyChange } from './classifier';
 import { retryD1 } from './db';
+import { discoverPeopleThreads } from './people';
 
 let lastSuccessfulSnapshotEndpoints = new Set<string>();
 let lastUnchangedSnapshotEndpoints = new Set<string>();
@@ -173,6 +174,7 @@ async function discoverFromGitHub(runId: string, token: string, ownerLogin: stri
   lastUnchangedSnapshotEndpoints = new Set<string>();
   currentDiscoveryEnv = env;
   const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'sunrise-dashboard' };
+  const peopleRefresh = refreshPeopleThreads(env, headers, ownerLogin);
   const [notifications, reviewRequests, assigned, authoredPrs, authoredIssues, ownedRepoPrs, involved, discussions, repoInvitations, orgMemberships, activeRepos] = await Promise.all([
     snapshotFetch<any>('https://api.github.com/notifications?all=false&per_page=100', headers, 'GitHub notifications', 'notifications'),
     snapshotSearch(headers, 'search/review-requests', `is:pr is:open review-requested:${ownerLogin} archived:false`),
@@ -188,6 +190,7 @@ async function discoverFromGitHub(runId: string, token: string, ownerLogin: stri
   ]);
   const enrichedAuthoredPrs = await enrichPullRequests(headers, authoredPrs.slice(0, 20), ownerLogin);
   const repoAlerts = await discoverRepoAlerts(runId, headers, activeRepos.slice(0, 10), ownerLogin);
+  await peopleRefresh;
   await captureRateLimit(env, headers);
   return dedupeChanges([
     ...notifications.map((n) => notificationToChange(runId, n)),
@@ -202,6 +205,18 @@ async function discoverFromGitHub(runId: string, token: string, ownerLogin: stri
     ...orgMemberships.map((i) => invitationToChange(runId, i, 'invitations/org')),
     ...repoAlerts,
   ]);
+}
+
+// The People panel is a snapshot kept outside action_items so it adds no
+// feed cards. It skips ETags: a 304 would return no rows and empty the panel.
+async function refreshPeopleThreads(env: Env, headers: Record<string, string>, ownerLogin: string) {
+  if (!ownerLogin) return;
+  try {
+    const threads = await discoverPeopleThreads(headers, ownerLogin);
+    await writeSetting(env, 'people_threads', JSON.stringify({ updatedAt: new Date().toISOString(), threads }));
+  } catch {
+    // Keep the previous snapshot rather than showing a partial list.
+  }
 }
 
 async function fetchPaginated<T>(firstUrl: string, headers: Record<string, string>, label: string, maxPages = 5): Promise<T[]> {

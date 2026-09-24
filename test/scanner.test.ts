@@ -154,6 +154,47 @@ describe('GitHub discovery', () => {
     const run = (await env.DB.prepare('SELECT * FROM scan_runs').first<Record<string, any>>())!;
     expect(run.processed_count ?? 0).toBe(0);
   });
+
+  it('refreshes the People panel snapshot without adding feed cards', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/search/issues')) {
+        const query = decodeURIComponent(new URL(u).searchParams.get('q') ?? '');
+        if (query === 'is:open user:ade -author:ade archived:false') {
+          return search([{ ...issue('Question from a user', 'https://github.com/ade/r/issues/3', '2026-05-01T09:00:00Z', 'reporter'), number: 3, repository_url: 'https://api.github.com/repos/ade/r', created_at: '2026-05-01T09:00:00Z', comments: 0 }]);
+        }
+        return search([]);
+      }
+      return Response.json([]);
+    }));
+
+    const result = await runDiscovery(env, 'manual', 'token');
+
+    const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'people_threads'").first<Record<string, string>>();
+    expect(JSON.parse(row!.value).threads).toEqual([expect.objectContaining({ waitingOn: 'you', person: 'reporter', repo: 'ade/r', number: 3, since: '2026-05-01T09:00:00Z' })]);
+    expect(result.candidateCount).toBe(0);
+    const items = await env.DB.prepare('SELECT * FROM action_items').all();
+    expect(items.results).toHaveLength(0);
+  });
+
+  it('keeps the previous People snapshot when GitHub fails', async () => {
+    const previous = JSON.stringify({ updatedAt: '2026-05-01T00:00:00Z', threads: [{ waitingOn: 'you', person: 'reporter', repo: 'ade/r', number: 3, title: 'Question', url: 'https://github.com/ade/r/issues/3', since: '2026-05-01T09:00:00Z' }] });
+    await env.DB.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)').bind('people_threads', previous, '2026-05-01T00:00:00Z').run();
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/search/issues')) {
+        const query = decodeURIComponent(new URL(u).searchParams.get('q') ?? '');
+        const peopleQueries = ['is:open user:ade -author:ade archived:false', 'is:open author:ade -user:ade archived:false'];
+        return peopleQueries.includes(query) ? new Response('unavailable', { status: 502 }) : search([]);
+      }
+      return Response.json([]);
+    }));
+
+    await runDiscovery(env, 'manual', 'token');
+
+    const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'people_threads'").first<Record<string, string>>();
+    expect(row!.value).toBe(previous);
+  });
 });
 
 function notification(reason: string, title: string, subjectUrl: string, updatedAt: string) {

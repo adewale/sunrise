@@ -5,7 +5,7 @@ import { rootView, renderErrorDocument } from '../app/root-view';
 import { renderFaviconSvg } from '../app/components/brand';
 import type { Env } from './env';
 import { clearSessionCookie, getSession, retryD1, sessionCookie } from './db';
-import type { GitHubActionItem } from './types';
+import type { GitHubActionItem, PeopleThread } from './types';
 import { processGithubChange, runDiscovery } from './scanner';
 import { SUNRISE_CHANGELOG, SUNRISE_VERSION } from './version';
 
@@ -32,6 +32,8 @@ type DashboardCounts = {
 
 type Pagination = { page: number; pageSize: number; totalItems: number; totalPages: number; hasPrevious: boolean; hasNext: boolean };
 type UnresolvedLinkRow = { id: string; label: string; count: number; href: string; query?: string };
+export type PeopleRow = { id: string; person: string; repo: string; items: { number: number; title: string; url: string }[]; since: string };
+export type PeoplePanel = { waitingOnYou: PeopleRow[]; waitingOnThem: PeopleRow[] };
 type RefreshSummary = Record<string, any>;
 
 export type LandingProps = {
@@ -54,6 +56,7 @@ export type DashboardProps = {
   refreshSummary: RefreshSummary | null;
   counts: DashboardCounts;
   unresolvedLinks: UnresolvedLinkRow[];
+  people: PeoplePanel;
   items: GitHubActionItem[];
   pagination: Pagination;
   settings: UserSettings;
@@ -347,6 +350,7 @@ async function dashboardProps(env: Env, login: string, page = 1): Promise<Omit<D
   const lastRun = await env.DB.prepare('SELECT * FROM scan_runs ORDER BY started_at DESC LIMIT 1').first<Record<string, any>>();
   const rate = await env.DB.prepare('SELECT * FROM rate_limit_snapshots ORDER BY captured_at DESC LIMIT 1').first<Record<string, any>>();
   const refreshSummary = await readRefreshSummary(env.DB);
+  const people = await readPeoplePanel(env.DB);
   return {
     product: PRODUCT,
     signedInAs: login,
@@ -366,6 +370,7 @@ async function dashboardProps(env: Env, login: string, page = 1): Promise<Omit<D
       reviewRequests: allItems.filter((i) => i.kind === 'review_requested').length,
     },
     unresolvedLinks: unresolvedGitHubLinks(allItems, login),
+    people,
     items,
     pagination: { page: safePage, pageSize, totalItems, totalPages, hasPrevious: safePage > 1, hasNext: safePage < totalPages },
     settings,
@@ -461,6 +466,31 @@ async function readRefreshSummary(db: D1Database) {
   const row = await db.prepare("SELECT value FROM settings WHERE key = 'last_refresh_summary'").first<Record<string, string>>();
   if (!row?.value) return null;
   try { return JSON.parse(row.value); } catch { return null; }
+}
+
+async function readPeoplePanel(db: D1Database): Promise<PeoplePanel> {
+  const value = await readSetting(db, 'people_threads');
+  let threads: PeopleThread[] = [];
+  try { threads = value ? JSON.parse(value).threads ?? [] : []; } catch {}
+  return {
+    waitingOnYou: peopleRows(threads.filter((thread) => thread.waitingOn === 'you')),
+    waitingOnThem: peopleRows(threads.filter((thread) => thread.waitingOn === 'them')),
+  };
+}
+
+// One row per person and repo, longest wait first; a row waits as long as its oldest thread.
+function peopleRows(threads: PeopleThread[]): PeopleRow[] {
+  const rows = new Map<string, PeopleRow>();
+  for (const thread of threads) {
+    const id = `${thread.waitingOn}:${thread.person}:${thread.repo}`.toLowerCase();
+    const row = rows.get(id) ?? { id, person: thread.person, repo: thread.repo, items: [], since: thread.since };
+    row.items.push({ number: thread.number, title: thread.title, url: thread.url });
+    if (Date.parse(thread.since) < Date.parse(row.since)) row.since = thread.since;
+    rows.set(id, row);
+  }
+  return [...rows.values()]
+    .map((row) => ({ ...row, items: row.items.sort((a, b) => a.number - b.number) }))
+    .sort((a, b) => Date.parse(a.since) - Date.parse(b.since));
 }
 
 async function readSettings(db: D1Database): Promise<UserSettings> {

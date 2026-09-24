@@ -2,6 +2,16 @@
 
 All notable Sunrise changes are recorded here for deployers and their coding agents.
 
+## [Unreleased]
+
+### User-facing changes
+
+- Added a People panel at the top of the dashboard sidebar. It lists open issues and PRs where someone is waiting on you and where you are waiting on someone else, with how long each has waited. Who is waiting comes from the last person to open, comment on, or review the thread. Drafts and bot-authored threads are left out, and the inbox feed is unchanged.
+
+### Operational changes
+
+- Each GitHub scan runs two more issue searches (open threads by other people in your repos, and yours in other people's repos), then looks up comments and reviews only where they could change who is waiting. The result is stored in the `settings` table under `people_threads`; no migration is needed. If GitHub fails, the previous snapshot is kept.
+
 ## [0.2.0] - 2026-05-28
 
 ### User-facing changes

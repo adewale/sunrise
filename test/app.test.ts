@@ -50,6 +50,30 @@ describe('Sunrise app routes', () => {
     expect(svg).toContain('aria-hidden');
   });
 
+  it('shows who is waiting in the People panel without adding feed cards', async () => {
+    await signIn();
+    const threads = [
+      { waitingOn: 'you', person: 'reporter', repo: 'ade/scanner', number: 6, title: 'Unicode bypass', url: 'https://github.com/ade/scanner/issues/6', since: '2026-02-09T00:00:00Z' },
+      { waitingOn: 'them', person: 'maintainer', repo: 'maintainer/project', number: 43, title: 'Validate start_url', url: 'https://github.com/maintainer/project/issues/43', since: '2018-03-30T00:00:00Z' },
+    ];
+    await env.DB.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)').bind('people_threads', JSON.stringify({ updatedAt: '2026-09-01T00:00:00Z', threads }), '2026-09-01T00:00:00Z').run();
+    const html = await (await SELF.fetch('http://example.com/dashboard', { headers: { Cookie: 'sunrise_session=sid' } })).text();
+    expect(html).toContain('class="panel stat-card people-card"');
+    expect(html).toContain('<h3>Waiting on you</h3>');
+    expect(html).toContain('<h3>You’re waiting on</h3>');
+    expect(html).toContain('href="https://github.com/ade/scanner/issues/6"');
+    expect(html).toMatch(/datetime="2018-03-30T00:00:00Z"[^>]*>\d+y</);
+    expect(html.indexOf('class="panel stat-card people-card"')).toBeLessThan(html.indexOf('class="panel stat-card unresolved-card"'));
+    expect(html).toContain('No unresolved GitHub loops are in your inbox right now.');
+  });
+
+  it('hides the People panel when nobody is waiting', async () => {
+    await signIn();
+    const html = await (await SELF.fetch('http://example.com/dashboard', { headers: { Cookie: 'sunrise_session=sid' } })).text();
+    expect(html).not.toContain('class="panel stat-card people-card"');
+    expect(html).toContain('class="panel stat-card unresolved-card"');
+  });
+
   it('renders dashboard as an inbox with marginal stats', async () => {
     await signIn();
     await env.DB.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, ?, ?)')

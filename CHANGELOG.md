@@ -7,10 +7,12 @@ All notable Sunrise changes are recorded here for deployers and their coding age
 ### User-facing changes
 
 - Added a People panel at the top of the dashboard sidebar. It lists open issues and PRs where someone is waiting on you and where you are waiting on someone else, with how long each has waited. Who is waiting comes from the last person to open, comment on, or review the thread. Drafts and bot-authored threads are left out, and the inbox feed is unchanged.
+- Fixed inbox cards disappearing, or resolved cards staying, after a refresh in which GitHub reported some sources as not modified. For example, an unchanged list of failed workflow runs in one repo could delete that repo's workflow card when another repo changed.
 
 ### Operational changes
 
 - Each GitHub scan runs two more issue searches (open threads by other people in your repos, and yours in other people's repos), then looks up comments and reviews only where they could change who is waiting. The result is stored in the `settings` table under `people_threads`; no migration is needed. If GitHub fails, the previous snapshot is kept.
+- Stopped sending ETag conditional requests to GitHub. Every scan now fetches complete data, and "nothing changed" is detected only by comparing the new snapshot with the previous one, which now also covers an empty snapshot. Scans that change nothing now cost their full requests against GitHub's rate limit, which stays well within it. Old `github_etag:*` rows in `settings` are no longer read and can be deleted.
 
 ## [0.2.0] - 2026-05-28
 

@@ -7,8 +7,6 @@ import { retryD1 } from './db';
 import { discoverPeopleThreads } from './people';
 
 let lastSuccessfulSnapshotEndpoints = new Set<string>();
-let lastUnchangedSnapshotEndpoints = new Set<string>();
-let currentDiscoveryEnv: Env | null = null;
 
 export async function runDiscovery(env: Env, trigger: 'cron' | 'manual' = 'manual', accessToken?: string) {
   const runId = crypto.randomUUID();
@@ -20,7 +18,6 @@ export async function runDiscovery(env: Env, trigger: 'cron' | 'manual' = 'manua
     if (await snapshotUnchanged(env, changes)) {
       await writeRefreshSummary(env, { status: 'no_change', candidateCount: 0, resolvedCount: 0 });
       await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('no_change', new Date().toISOString(), 0, runId).run());
-      currentDiscoveryEnv = null;
       return { runId, candidateCount: 0, noChange: true };
     }
     const beforeKeys = await currentActionItemKeys(env);
@@ -32,10 +29,8 @@ export async function runDiscovery(env: Env, trigger: 'cron' | 'manual' = 'manua
     await writeSnapshotSignature(env, changes);
     await writeRefreshSummary(env, { status: 'changed', candidateCount: changes.length, resolvedCount: [...beforeKeys].filter((key) => !afterKeys.has(key)).length });
     await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', new Date().toISOString(), changes.length, runId).run());
-    currentDiscoveryEnv = null;
     return { runId, candidateCount: changes.length, noChange: false };
   } catch (error) {
-    currentDiscoveryEnv = null;
     await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, error = ? WHERE id = ?').bind('failed', new Date().toISOString(), error instanceof Error ? error.message : String(error), runId).run());
     throw error;
   }
@@ -47,16 +42,15 @@ async function filterBySettings(env: Env, changes: GitHubChange[]) {
   return changes.filter((change) => !(change.sourceEndpoint === 'notifications' && String(change.raw?.reason ?? '').toLowerCase() === 'subscribed'));
 }
 
+// Sunrise sends no ETags. A 304 carries no items, so reconciliation would read
+// an unchanged source as empty and delete its cards. Every scan fetches complete
+// data, and an unchanged snapshot is detected by comparing signatures.
 async function snapshotUnchanged(env: Env, changes: GitHubChange[]) {
-  if (changes.length === 0 && lastUnchangedSnapshotEndpoints.size > 0) return true;
-  if (lastUnchangedSnapshotEndpoints.size > 0) return false;
-  const signature = snapshotSignature(changes);
   const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'github_snapshot_signature'").first<Record<string, string>>();
-  return Boolean(row?.value) && row?.value === signature;
+  return row !== null && row.value === snapshotSignature(changes);
 }
 
 async function writeSnapshotSignature(env: Env, changes: GitHubChange[]) {
-  if (lastUnchangedSnapshotEndpoints.size > 0) return;
   await writeSetting(env, 'github_snapshot_signature', snapshotSignature(changes));
 }
 
@@ -171,8 +165,6 @@ async function reconcileResolvedActionItems(env: Env, changes: GitHubChange[], s
 
 async function discoverFromGitHub(runId: string, token: string, ownerLogin: string, env: Env): Promise<GitHubChange[]> {
   lastSuccessfulSnapshotEndpoints = new Set<string>();
-  lastUnchangedSnapshotEndpoints = new Set<string>();
-  currentDiscoveryEnv = env;
   const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'sunrise-dashboard' };
   const peopleRefresh = refreshPeopleThreads(env, headers, ownerLogin);
   const [notifications, reviewRequests, assigned, authoredPrs, authoredIssues, ownedRepoPrs, involved, discussions, repoInvitations, orgMemberships, activeRepos] = await Promise.all([
@@ -207,8 +199,7 @@ async function discoverFromGitHub(runId: string, token: string, ownerLogin: stri
   ]);
 }
 
-// The People panel is a snapshot kept outside action_items so it adds no
-// feed cards. It skips ETags: a 304 would return no rows and empty the panel.
+// The People panel is a snapshot kept outside action_items so it adds no feed cards.
 async function refreshPeopleThreads(env: Env, headers: Record<string, string>, ownerLogin: string) {
   if (!ownerLogin) return;
   try {
@@ -223,18 +214,8 @@ async function fetchPaginated<T>(firstUrl: string, headers: Record<string, strin
   const out: T[] = [];
   let url: string | null = firstUrl;
   for (let page = 0; url && page < maxPages; page++) {
-    const requestHeaders = { ...headers };
-    const etagKey = `github_etag:${label}:${page}:${url.split('?')[0]}:${new URL(url).searchParams.get('q') ?? ''}`;
-    const etag = currentDiscoveryEnv ? await readSetting(currentDiscoveryEnv, etagKey) : null;
-    if (etag) requestHeaders['If-None-Match'] = etag;
-    const res = await fetch(url, { headers: requestHeaders });
-    if (res.status === 304) {
-      lastUnchangedSnapshotEndpoints.add(label);
-      return [];
-    }
+    const res = await fetch(url, { headers });
     if (!res.ok) throw new Error(`${label} failed: ${res.status}`);
-    const nextEtag = res.headers.get('etag');
-    if (nextEtag && currentDiscoveryEnv) await writeSetting(currentDiscoveryEnv, etagKey, nextEtag);
     const json = await res.json<any>();
     out.push(...(Array.isArray(json) ? json : json.items ?? json.check_runs ?? json.workflow_runs ?? json.alerts ?? []));
     url = nextLink(res.headers.get('link'));

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Single-command local ship-readiness check. Runs:
-//   1. Playwright Chromium install (skipped if already present)
+//   1. Playwright Chromium install (idempotent; a no-op when the revision the
+//      installed Playwright wants is already present)
 //   2. wrangler types (regenerates worker-configuration.d.ts)
 //   3. tsc --noEmit
 //   4. vite build (production client + worker)
@@ -9,9 +10,6 @@
 // Stops on the first failure. Exits 0 only if every step passes.
 // Run with: npm run ship-check
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 
 const steps = [
   { name: 'Playwright Chromium', fn: ensurePlaywrightChromium },
@@ -59,22 +57,11 @@ async function run(command, args, env = process.env) {
 }
 
 async function ensurePlaywrightChromium() {
-  // Honor a pre-existing install in any of Playwright's known locations,
-  // including PLAYWRIGHT_BROWSERS_PATH (CI overrides this) and the default
-  // per-OS cache. If none of them looks present, download Chromium.
-  const overridePath = process.env.PLAYWRIGHT_BROWSERS_PATH;
-  const candidates = [
-    overridePath,
-    process.platform === 'darwin' && join(homedir(), 'Library/Caches/ms-playwright'),
-    process.platform === 'linux' && join(homedir(), '.cache/ms-playwright'),
-    process.platform === 'win32' && join(process.env.LOCALAPPDATA ?? homedir(), 'ms-playwright'),
-    '/opt/pw-browsers',
-  ].filter(Boolean);
-  const hasBrowser = candidates.some((dir) => existsSync(join(dir, 'chromium-1194')) || existsSync(join(dir, 'chromium_headless_shell-1194')));
-  if (hasBrowser) {
-    process.stdout.write('  Chromium already installed; skipping download.\n');
-    return 0;
-  }
-  process.stdout.write('  Downloading Chromium for Playwright (one-time, ~150 MB)...\n');
+  // Always ask Playwright itself. It knows which Chromium revision this
+  // version needs, honours PLAYWRIGHT_BROWSERS_PATH, and skips the download
+  // when that revision is already installed. Guessing from directory names
+  // (the old check looked for chromium-1194) skipped the install whenever a
+  // stale revision was present, and the browser tests then failed with
+  // "Executable doesn't exist".
   return run('npx', ['playwright', 'install', 'chromium']);
 }

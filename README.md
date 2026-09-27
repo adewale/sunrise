@@ -136,7 +136,7 @@ npm run ship-check
 
 It executes, stopping on the first failure:
 
-1. Playwright Chromium install (skipped if already present — needed for the browser E2E)
+1. `npx playwright install chromium` — needed for the browser E2E; a quick no-op when the Chromium revision this Playwright version needs is already installed
 2. `wrangler types` — regenerates `worker-configuration.d.ts` from `wrangler.jsonc`
 3. `tsc --noEmit` — strict TypeScript check
 4. `vite build` — production client + worker build

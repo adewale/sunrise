@@ -125,6 +125,8 @@ When resolving conflicts, preserve your fork's deployment-specific Cloudflare co
 
 ## Local ship-readiness check
 
+CI (`.github/workflows/ci.yml`) runs `npm run verify`, including the browser project, and `npm run build` on every pull request and every push to `main`, so a fork starts from a verified `main`.
+
 A single command runs the full pre-deploy verification on a fresh checkout:
 
 ```bash

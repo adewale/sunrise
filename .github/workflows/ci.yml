@@ -1,0 +1,47 @@
+name: CI
+
+# Sunrise is a Deploy-to-Cloudflare template: every deployer's fork starts
+# from main, and docs/agent-upgrade-contract.md tells their coding agent to run
+# `npm run verify` before deploying. Keep main green on exactly that command.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify, build, browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The `browser` Vitest project drives a real `vite preview` worker in
+      # Chromium.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      # wrangler types, tsc, then both Vitest projects: `workers` (real D1 in
+      # workerd) and `browser` (Playwright against the production build).
+      - name: npm run verify
+        run: npm run verify
+
+      - name: Production build
+        run: npm run build

@@ -12,8 +12,11 @@ describe('scheduled (cron)', () => {
 
   it('runs a discovery pass using the most recent session for the configured owner', async () => {
     (env as any).OWNER_LOGIN = 'ade';
-    await env.DB.prepare('INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind('sid', 'ade', '1', 'cron-token', '2999-01-01T00:00:00Z', '2026-01-01T00:00:00Z').run();
+    const insert = env.DB.prepare('INSERT INTO sessions (id, github_login, github_id, access_token, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+    await insert.bind('older', 'ade', '1', 'older-owner-token', '2999-01-01T00:00:00Z', '2026-01-01T00:00:00Z').run();
+    await insert.bind('newest', 'Ade', '1', 'cron-token', '2999-01-01T00:00:00Z', '2026-02-01T00:00:00Z').run();
+    // A newer session for someone else must not be used for the owner's scan.
+    await insert.bind('other', 'someone-else', '2', 'other-user-token', '2999-01-01T00:00:00Z', '2026-03-01T00:00:00Z').run();
 
     const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
       const u = String(url);
@@ -27,8 +30,8 @@ describe('scheduled (cron)', () => {
     await worker.scheduled(createScheduledController({ scheduledTime: Date.now(), cron: '0 6 * * *' }), env, ctx);
     await waitOnExecutionContext(ctx);
 
-    const authHeaders = fetchMock.mock.calls.map((call) => call[1]?.headers);
-    expect(authHeaders.some((h) => JSON.stringify(h ?? {}).includes('Bearer cron-token'))).toBe(true);
+    const authHeaders = new Set(fetchMock.mock.calls.map((call) => (call[1]?.headers as Record<string, string> | undefined)?.Authorization));
+    expect(authHeaders).toEqual(new Set(['Bearer cron-token']));
 
     const run = await env.DB.prepare('SELECT * FROM scan_runs WHERE trigger = ? ORDER BY started_at DESC LIMIT 1').bind('cron').first<Record<string, any>>();
     expect(run?.status).toBe('succeeded');

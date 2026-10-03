@@ -4,12 +4,12 @@ import worker from '../src/index';
 import { runDiscovery } from '../src/scanner';
 import type { QueueMessage } from '../src/types';
 
-// Producer -> consumer round trip. runDiscovery enqueues through the REAL
-// miniflare Queue binding (a call-through spy only records what was sent, so
-// the runtime still validates the payload and enforces its batch limits), then
-// we replay those messages through worker.queue and assert the consumer
-// materializes action_items. Catches drift between the producer's payload
-// shape and the consumer's switch.
+// Producer -> consumer round trip. runDiscovery enqueues through the Queue
+// binding's sendBatch, which is stubbed so nothing reaches miniflare: the real
+// binding has a consumer (wrangler.jsonc) that would process a full batch of
+// 10 on its own, racing the replay below. We replay the recorded messages
+// through worker.queue and assert the consumer materializes action_items.
+// Catches drift between the producer's payload shape and the consumer's switch.
 describe('queue producer -> consumer round trip', () => {
   afterEach(() => vi.restoreAllMocks());
 
@@ -29,11 +29,15 @@ describe('queue producer -> consumer round trip', () => {
       return Response.json([]);
     }));
     const queue = env.GITHUB_QUEUE as Queue<QueueMessage>;
-    const sendBatch = vi.spyOn(queue, 'sendBatch');
+    const sendBatch = vi.spyOn(queue, 'sendBatch').mockResolvedValue(undefined as never);
+    const send = vi.spyOn(queue, 'send').mockResolvedValue(undefined as never);
 
     const result = await runDiscovery(env, 'manual', 'token');
     expect(result.candidateCount).toBe(notificationCount);
 
+    expect(send).not.toHaveBeenCalled();
+    // Cloudflare Queues rejects a sendBatch of more than 100 messages.
+    for (const [batch] of sendBatch.mock.calls) expect([...batch].length).toBeLessThanOrEqual(100);
     const sent = sendBatch.mock.calls.flatMap(([batch]) => [...batch].map((m) => m.body));
     const persisted = await env.DB.prepare('SELECT id, run_id FROM github_changes').all<{ id: string; run_id: string }>();
     expect(sent.map((body) => body.kind === 'process-github-change' && body.changeId).sort())

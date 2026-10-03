@@ -30,7 +30,7 @@ describe('scheduled (cron)', () => {
     await worker.scheduled(createScheduledController({ scheduledTime: Date.now(), cron: '0 6 * * *' }), env, ctx);
     await waitOnExecutionContext(ctx);
 
-    const authHeaders = new Set(fetchMock.mock.calls.map((call) => (call[1]?.headers as Record<string, string> | undefined)?.Authorization));
+    const authHeaders = new Set(fetchMock.mock.calls.map((call) => new Headers(call[1]?.headers).get('Authorization')));
     expect(authHeaders).toEqual(new Set(['Bearer cron-token']));
 
     const run = await env.DB.prepare('SELECT * FROM scan_runs WHERE trigger = ? ORDER BY started_at DESC LIMIT 1').bind('cron').first<Record<string, any>>();

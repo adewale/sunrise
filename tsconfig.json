@@ -4,7 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
-    "types": ["vitest/globals", "node", "vite/client", "@cloudflare/vitest-pool-workers/types"],
+    "types": ["vitest/globals", "node", "vite/client", "@cloudflare/vitest-plugin/types"],
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx",
     "noEmit": true,

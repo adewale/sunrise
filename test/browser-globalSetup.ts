@@ -1,5 +1,6 @@
 import { execSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, rmSync, writeFileSync, unlinkSync } from 'node:fs';
+import { parsePreviewPort } from './preview-port';
 
 // Builds the worker + client, seeds the local miniflare D1, spawns `vite
 // preview` (the production worker in workerd against that same D1), and
@@ -21,10 +22,10 @@ async function readPortFromPreview(child: ChildProcess, timeoutMs = 30000): Prom
     const timer = setTimeout(() => reject(new Error(`preview did not announce port within ${timeoutMs}ms. output: ${output}`)), timeoutMs);
     const handler = (chunk: Buffer) => {
       output += chunk.toString();
-      const match = output.match(/Local:\s+https?:\/\/127\.0\.0\.1:(\d+)/);
-      if (match) {
+      const port = parsePreviewPort(output);
+      if (port !== undefined) {
         clearTimeout(timer);
-        resolve(parseInt(match[1], 10));
+        resolve(port);
       }
     };
     child.stdout?.on('data', handler);

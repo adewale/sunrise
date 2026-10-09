@@ -555,6 +555,8 @@ Rule of thumb: prefer the real engine over a fake; when a test depends on the te
 
 A 304 response supplies no replacement list. Exclude cached and pagination-truncated snapshots from destructive reconciliation, and require every endpoint contributing to a shared item kind to be complete. The existing ETag regression now combines a cached review request with a new mention, proving the cached card survives a changed scan without removing conditional requests or adding API traffic.
 
+GitHub search can also return HTTP 200 with `incomplete_results: true`; that is not evidence of absence. Scope repository-alert completeness to the repository actually fetched: a successful request for repository A cannot resolve cached, failed or unscanned alerts in B. Snapshot evidence and its environment must belong to one discovery invocation, not module globals shared by overlapping scans. Strengthen existing changed-scan scenarios to distinguish these cases without another API call or campaign.
+
 ## 38. Stronger checks need not add another verification lane
 
 The browser project's setup already builds the app; a second CI build duplicates that work. Pure retry/version checks belong in its existing Node environment, without D1 resets and migrations. Advance retry timers virtually, keep the existing CI job and discovery-property budgets, and strengthen assertions within existing scenarios before adding campaigns.

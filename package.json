@@ -36,7 +36,7 @@
   },
   "dependencies": {
     "@hono/inertia": "^0.2.0",
-    "hono": "^4.12.16"
+    "hono": "^4.13.7"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.38.0",

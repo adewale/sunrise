@@ -212,13 +212,18 @@ describe('GitHub discovery', () => {
     expect(JSON.parse(items.results[0].evidence_json).notificationReason).toBe('subscribed');
   });
 
-  it('removes snapshot-backed action items after GitHub no longer returns them', async () => {
+  it('reconciles only complete snapshots in the repository actually scanned', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
-      if (u.includes('/notifications')) return Response.json([]);
-      if (u.includes('/search/issues')) return search([]);
+      if (u.includes('/notifications')) return Response.json([notification('mention', 'New mention', 'https://api.github.com/repos/o/r/issues/10', '2026-05-01T10:00:00Z')]);
+      if (u.includes('/search/issues')) return Response.json({ items: [], incomplete_results: (new URL(u).searchParams.get('q') ?? '').includes('assignee:ade') });
       if (u.includes('/user/repository_invitations')) return Response.json([]);
       if (u.includes('/user/memberships/orgs')) return Response.json([]);
+      if (u.includes('/user/repos?')) return Response.json([
+        { full_name: 'ade/a', owner: { login: 'ade' } },
+        { full_name: 'ade/b', owner: { login: 'ade' } },
+      ]);
+      if (u.includes('/repos/ade/b/dependabot')) return new Response(null, { status: 304 });
       return Response.json([]);
     }));
     const stale = [
@@ -228,10 +233,13 @@ describe('GitHub discovery', () => {
       ['old-authored', 'github:o/r/pull/3', 'authored_pr_pending', 'Authored PR', 'https://github.com/o/r/pull/3'],
       ['old-created', 'github:o/r/issues/4', 'maintenance', 'Created issue', 'https://github.com/o/r/issues/4'],
       ['old-repo-pr', 'github:ade/r/pull/5', 'repo_pr', 'Repo PR', 'https://github.com/ade/r/pull/5'],
+      ['closed-alert', 'alert:a', 'security_alert', 'Resolved alert', 'https://github.com/ade/a', 'ade/a'],
+      ['cached-alert', 'alert:b', 'security_alert', 'Cached alert', 'https://github.com/ade/b', 'ade/b'],
+      ['unscanned-alert', 'alert:c', 'security_alert', 'Unscanned alert', 'https://github.com/ade/c', 'ade/c'],
     ];
-    for (const [id, key, kind, title, url] of stale) {
+    for (const [id, key, kind, title, url, repo = 'ade/r'] of stale) {
       await env.DB.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
-        .bind(id, key, kind, title, 'ade/r', url, '2026-05-01T00:00:00Z', 'stale', 'act', '{}', 'search').run();
+        .bind(id, key, kind, title, repo, url, '2026-05-01T00:00:00Z', 'stale', 'act', '{}', 'search').run();
     }
     await env.DB.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
       .bind('keep-mention', 'github:o/r/issues/9', 'mention', 'Mention', 'o/r', 'https://github.com/o/r/issues/9', '2026-05-01T00:00:00Z', 'mention', 'reply', '{}', 'notifications').run();
@@ -239,8 +247,8 @@ describe('GitHub discovery', () => {
     await runDiscovery(env, 'manual', 'token');
 
     const items = await env.DB.prepare('SELECT * FROM action_items').all<Record<string, any>>();
-    expect(items.results.map((row) => row.kind)).not.toEqual(expect.arrayContaining(['invitation', 'review_requested', 'assigned', 'authored_pr_pending', 'maintenance', 'repo_pr']));
-    expect(items.results.some((row) => row.kind === 'mention')).toBe(true);
+    expect(items.results.find((row) => row.title === 'New mention')?.kind).toBe('mention');
+    expect(items.results.filter((row) => row.title !== 'New mention').map((row) => row.id).sort()).toEqual(['cached-alert', 'keep-mention', 'old-assigned', 'unscanned-alert']);
   });
 
   it('skips processing when the GitHub snapshot has not changed', async () => {

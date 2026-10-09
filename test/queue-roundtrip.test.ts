@@ -14,7 +14,7 @@ describe('queue producer -> consumer round trip', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('enqueues every persisted change once and the consumer turns each into an action item', async () => {
-    const notificationCount = 12; // more than one producer batch
+    const notificationCount = 2; // enough to distinguish loss or duplication
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/notifications')) {

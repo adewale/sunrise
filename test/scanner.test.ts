@@ -21,7 +21,7 @@ const equalSpecificityEndpointArbitrary = fc.constantFrom(
 );
 
 const timestampArbitrary = fc.oneof(
-  fc.integer({ min: 0, max: 4_102_444_800_000 }).map((timestamp) => new Date(timestamp).toISOString()),
+  fc.integer({ min: -2_208_988_800_000, max: 4_102_444_800_000 }).map((timestamp) => new Date(timestamp).toISOString()),
   fc.constantFrom('', 'not-a-date', 'invalid timestamp'),
 );
 
@@ -50,6 +50,50 @@ describe('GitHub discovery', () => {
   // 'uses sendBatch' test re-sets GITHUB_QUEUE to its own mock.
   beforeEach(() => { (env as any).GITHUB_QUEUE = undefined; });
   afterEach(() => vi.restoreAllMocks());
+
+  it('retains the more specific source even when its record is older', () => {
+    // Explicit policy pairs, not a copy of the production rank calculation.
+    const sourcePairs = fc.constantFrom(
+      ['notifications', 'search/involved'],
+      ['search/involved', 'search/review-requests'],
+      ['search/involved', 'search/assigned'],
+      ['search/involved', 'search/created-issues'],
+      ['search/review-requests', 'search/authored-prs'],
+      ['search/assigned', 'search/owned-repo-prs'],
+    );
+    fc.assert(fc.property(githubChangeArbitrary, sourcePairs, (change, [less, more]) => {
+      const newer = { ...change, sourceEndpoint: less, updatedAt: '2026-05-01T00:00:00Z' };
+      const older = { ...change, sourceEndpoint: more, updatedAt: '2025-05-01T00:00:00Z' };
+      expect(dedupeChanges([newer, older])).toEqual([older]);
+      expect(dedupeChanges([older, newer])).toEqual([older]);
+    }), { numRuns: 100 });
+  });
+
+  it('selects the newest equal-specificity record, including before the Unix epoch', () => {
+    fc.assert(fc.property(
+      githubChangeArbitrary,
+      fc.integer({ min: -2_208_988_800_000, max: 4_102_444_800_000 }),
+      fc.integer({ min: 1, max: 1_000_000 }),
+      (change, timestamp, elapsed) => {
+        const older = { ...change, updatedAt: new Date(timestamp).toISOString() };
+        const newer = { ...change, updatedAt: new Date(timestamp + elapsed).toISOString() };
+        expect(dedupeChanges([older, newer])).toEqual([newer]);
+        expect(dedupeChanges([newer, older])).toEqual([newer]);
+      },
+    ), { numRuns: 100 });
+  });
+
+  it('orders distinct subjects newest first and places malformed dates after valid pre-epoch dates', () => {
+    fc.assert(fc.property(githubChangeArbitrary, (change) => {
+      const older = { ...change, canonicalSubjectKey: 'old', updatedAt: '1960-01-01T00:00:00Z' };
+      const newer = { ...change, canonicalSubjectKey: 'new', updatedAt: '1970-01-01T00:00:00Z' };
+      const invalid = { ...change, canonicalSubjectKey: 'invalid', updatedAt: 'not-a-date' };
+      expect(dedupeChanges([invalid, older, newer])).toEqual([newer, older, invalid]);
+      // Valid dates must also win within a duplicate group, not only in sorting.
+      expect(dedupeChanges([{ ...invalid, canonicalSubjectKey: 'old' }, older])).toEqual([older]);
+      expect(dedupeChanges([older, { ...invalid, canonicalSubjectKey: 'old' }])).toEqual([older]);
+    }), { numRuns: 100 });
+  });
 
   it('deduplicates production discovery inputs independently of source order', () => {
     fc.assert(

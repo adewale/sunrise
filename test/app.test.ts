@@ -56,7 +56,7 @@ describe('Sunrise app routes', () => {
       .bind('run1', 'manual', 'succeeded', '2026-04-30T00:00:00Z', 0, 0).run();
     await env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', '2026-04-30T00:00:00Z', 3, 'run1').run();
     await env.DB.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
-      .bind('last_refresh_summary', JSON.stringify({ status: 'changed', candidateCount: 5, resolvedCount: 1, updatedAt: '2026-04-30T00:00:00Z' }), '2026-04-30T00:00:00Z').run();
+      .bind('last_refresh_summary', JSON.stringify({ status: 'changed', candidateCount: 5, resolvedCount: 1, updatedAt: '2026-04-30T00:00:00Z', snapshotSignature: 'internal-snapshot-evidence' }), '2026-04-30T00:00:00Z').run();
     await env.DB.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
       .bind('i1', 'k1', 'review_requested', 'Review the launch PR', 'o/r', 'https://github.com/o/r/pull/1', '2026-04-30T00:00:00Z', 'You were requested for review.', 'Review PR', '{}', 'notifications').run();
     await env.DB.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
@@ -69,6 +69,7 @@ describe('Sunrise app routes', () => {
       .bind('i5', 'k5', 'maintenance', 'My open issue', 'ade/r', 'https://github.com/ade/r/issues/9', '2026-04-26T00:00:00Z', 'A thread you opened has activity or needs closure.', 'Respond, close, or archive this loop', '{"isAuthored":true}', 'issues').run();
     const res = await SELF.fetch('http://example.com/dashboard', { headers: { Cookie: 'sunrise_session=sid' } });
     const html = await res.text();
+    expect(html).not.toContain('internal-snapshot-evidence');
     expect(html).toContain('class="dashboard-layout"');
     expect(html).toContain('class="inbox panel"');
     expect(html).toContain('class="brand-mark"');

@@ -550,3 +550,17 @@ A green suite hid three bugs because the tests didn't faithfully represent reali
 - **Runner fidelity.** A warm developer machine hid two clean-runner requirements: Playwright's package does not install Chromium, and Vite may color the preview URL that test setup parses. Fix: CI explicitly installs Chromium and `test/preview-port.test.ts` pins ANSI-aware parsing of the real preview output.
 
 Rule of thumb: prefer the real engine over a fake; when a test depends on the test environment enforcing a constraint, make sure the environment actually enforces it — otherwise the double becomes a yes-man and the suite reports false green. Also confirm new behavioral guards go *red* with the bug reintroduced, so you know the test can fail.
+
+## 37. A cache hit is not an empty snapshot
+
+A 304 response supplies no replacement list. Exclude cached and pagination-truncated snapshots from destructive reconciliation, and require every endpoint contributing to a shared item kind to be complete. The existing ETag regression now combines a cached review request with a new mention, proving the cached card survives a changed scan without removing conditional requests or adding API traffic.
+
+GitHub search can also return HTTP 200 with `incomplete_results: true`; that is not evidence of absence. Scope repository-alert completeness to the repository actually fetched: a successful request for repository A cannot resolve cached, failed or unscanned alerts in B. Snapshot evidence and its environment must belong to one discovery invocation, not module globals shared by overlapping scans. Strengthen existing changed-scan scenarios to distinguish these cases without another API call or campaign.
+
+Completeness is part of snapshot identity, not just a deletion guard. A stable unrelated mention can otherwise make an incomplete-to-complete empty search look unchanged forever, leaving a resolved assignment on the dashboard. Remember sorted complete endpoint/repository scopes with the records in the already-written refresh summary; even partial/cached scans replace that evidence, so an old full signature cannot suppress recovery. This replaces the separate signature write rather than adding persistence work. Strip the internal signature before returning the summary to Inertia, so reconciliation state does not inflate dashboard payloads. Only an entirely cached scan with no complete scopes may take the no-record shortcut; cached data from one endpoint cannot suppress reconciliation of another complete empty endpoint.
+
+Recovery can legitimately enqueue the same unchanged record again. An UPSERT conflict retains the persisted UUID, so the producer must return that UUID, not its newly generated candidate. Use `INSERT ... RETURNING id` within the existing D1 request; rewriting the identity would strand in-flight messages. The existing two-scan recovery scenario asserts queue IDs point to the real persisted row and both scans' processed counts match their candidates.
+
+## 38. Stronger checks need not add another verification lane
+
+The browser project's setup already builds the app; a second CI build duplicates that work. Pure retry/version checks belong in its existing Node environment, without D1 resets and migrations. Advance retry timers virtually, keep the existing CI job and discovery-property budgets, and strengthen assertions within existing scenarios before adding campaigns.

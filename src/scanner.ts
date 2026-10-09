@@ -5,36 +5,31 @@ type ProcessGitHubChangeMessage = Extract<QueueMessage, { kind: 'process-github-
 import { classifyChange } from './classifier';
 import { retryD1 } from './db';
 
-let lastSuccessfulSnapshotEndpoints = new Set<string>();
-let lastUnchangedSnapshotEndpoints = new Set<string>();
-let currentDiscoveryEnv: Env | null = null;
-
 export async function runDiscovery(env: Env, trigger: 'cron' | 'manual' = 'manual', accessToken?: string) {
   const runId = crypto.randomUUID();
   const now = new Date().toISOString();
   await retryD1(() => env.DB.prepare('INSERT INTO scan_runs (id, trigger, status, started_at, candidate_count, processed_count) VALUES (?, ?, ?, ?, 0, 0)').bind(runId, trigger, 'running', now).run());
   try {
-    const discovered = env.TEST_GITHUB_FIXTURES === 'true' || !accessToken ? fixtureChanges(runId, env.OWNER_LOGIN ?? 'owner') : await discoverFromGitHub(runId, accessToken, env.OWNER_LOGIN ?? '', env);
-    const changes = await filterBySettings(env, discovered);
-    if (await snapshotUnchanged(env, changes)) {
-      await writeRefreshSummary(env, { status: 'no_change', candidateCount: 0, resolvedCount: 0 });
+    const snapshot = env.TEST_GITHUB_FIXTURES === 'true' || !accessToken
+      ? { changes: fixtureChanges(runId, env.OWNER_LOGIN ?? 'owner'), successful: new Set<string>(), unchanged: new Set<string>() }
+      : await discoverFromGitHub(runId, accessToken, env.OWNER_LOGIN ?? '', env);
+    const changes = await filterBySettings(env, snapshot.changes);
+    const signature = snapshotSignature(changes, snapshot.successful);
+    if (await snapshotUnchanged(env, changes, snapshot.unchanged, snapshot.successful, signature)) {
+      await writeRefreshSummary(env, { status: 'no_change', candidateCount: 0, resolvedCount: 0, snapshotSignature: signature });
       await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('no_change', new Date().toISOString(), 0, runId).run());
-      currentDiscoveryEnv = null;
       return { runId, candidateCount: 0, noChange: true };
     }
     const beforeKeys = await currentActionItemKeys(env);
     const messages: ProcessGitHubChangeMessage[] = [];
     for (const change of changes) messages.push(await persistChange(env, change));
     await enqueueChanges(env, messages);
-    await reconcileResolvedActionItems(env, changes, lastSuccessfulSnapshotEndpoints);
+    await reconcileResolvedActionItems(env, changes, snapshot.successful);
     const afterKeys = await currentActionItemKeys(env);
-    await writeSnapshotSignature(env, changes);
-    await writeRefreshSummary(env, { status: 'changed', candidateCount: changes.length, resolvedCount: [...beforeKeys].filter((key) => !afterKeys.has(key)).length });
+    await writeRefreshSummary(env, { status: 'changed', candidateCount: changes.length, resolvedCount: [...beforeKeys].filter((key) => !afterKeys.has(key)).length, snapshotSignature: signature });
     await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', new Date().toISOString(), changes.length, runId).run());
-    currentDiscoveryEnv = null;
     return { runId, candidateCount: changes.length, noChange: false };
   } catch (error) {
-    currentDiscoveryEnv = null;
     await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, error = ? WHERE id = ?').bind('failed', new Date().toISOString(), error instanceof Error ? error.message : String(error), runId).run());
     throw error;
   }
@@ -46,20 +41,22 @@ async function filterBySettings(env: Env, changes: GitHubChange[]) {
   return changes.filter((change) => !(change.sourceEndpoint === 'notifications' && String(change.raw?.reason ?? '').toLowerCase() === 'subscribed'));
 }
 
-async function snapshotUnchanged(env: Env, changes: GitHubChange[]) {
-  if (changes.length === 0 && lastUnchangedSnapshotEndpoints.size > 0) return true;
+async function snapshotUnchanged(env: Env, changes: GitHubChange[], lastUnchangedSnapshotEndpoints: Set<string>, successfulSnapshots: Set<string>, signature: string) {
+  // A cached scope says nothing about another scope that supplied a complete
+  // empty response. Reconcile those scopes even if no current records arrived.
+  if (changes.length === 0 && lastUnchangedSnapshotEndpoints.size > 0 && successfulSnapshots.size === 0) return true;
   if (lastUnchangedSnapshotEndpoints.size > 0) return false;
-  const signature = snapshotSignature(changes);
-  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'github_snapshot_signature'").first<Record<string, string>>();
-  return Boolean(row?.value) && row?.value === signature;
+  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'last_refresh_summary'").first<Record<string, string>>();
+  try {
+    return Boolean(row?.value) && JSON.parse(row!.value).snapshotSignature === signature;
+  } catch {
+    return false;
+  }
 }
 
-async function writeSnapshotSignature(env: Env, changes: GitHubChange[]) {
-  if (lastUnchangedSnapshotEndpoints.size > 0) return;
-  await writeSetting(env, 'github_snapshot_signature', snapshotSignature(changes));
-}
-
-async function writeRefreshSummary(env: Env, summary: { status: string; candidateCount: number; resolvedCount: number }) {
+async function writeRefreshSummary(env: Env, summary: { status: string; candidateCount: number; resolvedCount: number; snapshotSignature: string }) {
+  // The existing summary write also remembers partial/cached scans. A separate
+  // full-snapshot setting would retain stale evidence across those scans.
   await writeSetting(env, 'last_refresh_summary', JSON.stringify({ ...summary, updatedAt: new Date().toISOString() }));
 }
 
@@ -73,8 +70,11 @@ async function readSetting(env: Env, key: string) {
   return row?.value ?? null;
 }
 
-function snapshotSignature(changes: GitHubChange[]) {
-  return changes.map((change) => `${change.sourceEndpoint}|${change.canonicalSubjectKey}|${change.updatedAt}`).sort().join('\n');
+function snapshotSignature(changes: GitHubChange[], successfulSnapshots: Set<string>) {
+  return JSON.stringify({
+    changes: changes.map((change) => `${change.sourceEndpoint}|${change.canonicalSubjectKey}|${change.updatedAt}`).sort(),
+    complete: [...successfulSnapshots].sort(),
+  });
 }
 
 async function currentActionItemKeys(env: Env) {
@@ -83,11 +83,14 @@ async function currentActionItemKeys(env: Env) {
 }
 
 async function persistChange(env: Env, change: GitHubChange): Promise<ProcessGitHubChangeMessage> {
-  await retryD1(() => env.DB.prepare(`INSERT INTO github_changes (id, run_id, canonical_subject_key, source_endpoint, repo, subject_type, subject_url, html_url, updated_at, raw_json, first_seen_at, last_seen_at, processing_status, attempt_count)
+  const persisted = await retryD1(() => env.DB.prepare(`INSERT INTO github_changes (id, run_id, canonical_subject_key, source_endpoint, repo, subject_type, subject_url, html_url, updated_at, raw_json, first_seen_at, last_seen_at, processing_status, attempt_count)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)
-    ON CONFLICT(canonical_subject_key, source_endpoint, updated_at) DO UPDATE SET run_id = excluded.run_id, raw_json = excluded.raw_json, last_seen_at = excluded.last_seen_at, processing_status = 'pending'`)
-    .bind(change.id, change.runId, change.canonicalSubjectKey, change.sourceEndpoint, change.repo, change.subjectType, change.subjectUrl, change.htmlUrl, change.updatedAt, JSON.stringify(change.raw), new Date().toISOString(), new Date().toISOString()).run());
-  return { kind: 'process-github-change', runId: change.runId, changeId: change.id };
+    ON CONFLICT(canonical_subject_key, source_endpoint, updated_at) DO UPDATE SET run_id = excluded.run_id, raw_json = excluded.raw_json, last_seen_at = excluded.last_seen_at, processing_status = 'pending'
+    RETURNING id`)
+    .bind(change.id, change.runId, change.canonicalSubjectKey, change.sourceEndpoint, change.repo, change.subjectType, change.subjectUrl, change.htmlUrl, change.updatedAt, JSON.stringify(change.raw), new Date().toISOString(), new Date().toISOString()).first<{ id: string }>());
+  if (!persisted) throw new Error('Persisted GitHub change did not return its identity');
+  // A conflict retains the existing UUID, including messages already in flight.
+  return { kind: 'process-github-change', runId: change.runId, changeId: persisted.id };
 }
 
 async function enqueueChanges(env: Env, messages: ProcessGitHubChangeMessage[]) {
@@ -153,14 +156,19 @@ async function reconcileResolvedActionItems(env: Env, changes: GitHubChange[], s
     { endpoints: ['search/authored-prs'], kinds: ['authored_pr_failing', 'authored_pr_changes_requested', 'authored_pr_conflict', 'authored_pr_pending', 'stale_green_pr'] },
     { endpoints: ['search/created-issues'], kinds: ['maintenance'] },
     { endpoints: ['search/owned-repo-prs'], kinds: ['repo_pr'] },
-    { endpoints: ['actions/workflow-failure'], kinds: ['workflow_failure'] },
-    { endpoints: ['security/dependabot', 'security/code-scanning', 'security/secret-scanning'], kinds: ['security_alert'] },
+    { endpoints: ['actions/workflow-failure'], kinds: ['workflow_failure'], repositoryScoped: true },
+    { endpoints: ['security/dependabot', 'security/code-scanning', 'security/secret-scanning'], kinds: ['security_alert'], repositoryScoped: true },
   ];
   for (const rule of rules) {
-    if (!rule.endpoints.some((endpoint) => successfulSnapshots.has(endpoint))) continue;
+    // An empty/partial response cannot prove that a previously observed item
+    // disappeared. In particular, 304 is a cache hit, not an empty snapshot.
+    if (rule.repositoryScoped) {
+      if (![...successfulSnapshots].some((key) => rule.endpoints.some((endpoint) => key.startsWith(endpoint + '@')))) continue;
+    } else if (!rule.endpoints.every((endpoint) => successfulSnapshots.has(endpoint))) continue;
     const liveKeys = new Set(changes.filter((change) => rule.endpoints.includes(change.sourceEndpoint)).map((change) => change.canonicalSubjectKey));
     const existing = await env.DB.prepare(`SELECT * FROM action_items WHERE kind IN (${rule.kinds.map(() => '?').join(',')})`).bind(...rule.kinds).all<Record<string, any>>();
     for (const row of existing.results) {
+      if (rule.repositoryScoped && !rule.endpoints.every((endpoint) => successfulSnapshots.has(endpoint + '@' + row.repo))) continue;
       if (liveKeys.has(row.canonical_subject_key)) continue;
       await retryD1(() => env.DB.prepare('DELETE FROM action_items WHERE canonical_subject_key = ?').bind(row.canonical_subject_key).run());
       await retryD1(() => env.DB.prepare('DELETE FROM item_evidence WHERE action_item_id = ?').bind(row.id).run());
@@ -168,10 +176,11 @@ async function reconcileResolvedActionItems(env: Env, changes: GitHubChange[], s
   }
 }
 
-async function discoverFromGitHub(runId: string, token: string, ownerLogin: string, env: Env): Promise<GitHubChange[]> {
-  lastSuccessfulSnapshotEndpoints = new Set<string>();
-  lastUnchangedSnapshotEndpoints = new Set<string>();
-  currentDiscoveryEnv = env;
+async function discoverFromGitHub(runId: string, token: string, ownerLogin: string, env: Env) {
+  // Evidence belongs to this invocation, not to overlapping scans in this isolate.
+  const lastSuccessfulSnapshotEndpoints = new Set<string>();
+  const lastUnchangedSnapshotEndpoints = new Set<string>();
+  const currentDiscoveryEnv = env;
   const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'sunrise-dashboard' };
   const [notifications, reviewRequests, assigned, authoredPrs, authoredIssues, ownedRepoPrs, involved, discussions, repoInvitations, orgMemberships, activeRepos] = await Promise.all([
     snapshotFetch<any>('https://api.github.com/notifications?all=false&per_page=100', headers, 'GitHub notifications', 'notifications'),
@@ -189,7 +198,7 @@ async function discoverFromGitHub(runId: string, token: string, ownerLogin: stri
   const enrichedAuthoredPrs = await enrichPullRequests(headers, authoredPrs.slice(0, 20), ownerLogin);
   const repoAlerts = await discoverRepoAlerts(runId, headers, activeRepos.slice(0, 10), ownerLogin);
   await captureRateLimit(env, headers);
-  return dedupeChanges([
+  return { successful: lastSuccessfulSnapshotEndpoints, unchanged: lastUnchangedSnapshotEndpoints, changes: dedupeChanges([
     ...notifications.map((n) => notificationToChange(runId, n)),
     ...reviewRequests.map((i) => issueSearchToChange(runId, i, 'search/review-requests', 'review_requested', ownerLogin)),
     ...assigned.map((i) => issueSearchToChange(runId, i, 'search/assigned', 'assign', ownerLogin)),
@@ -201,93 +210,96 @@ async function discoverFromGitHub(runId: string, token: string, ownerLogin: stri
     ...repoInvitations.map((i) => invitationToChange(runId, i, 'invitations/repository')),
     ...orgMemberships.map((i) => invitationToChange(runId, i, 'invitations/org')),
     ...repoAlerts,
-  ]);
-}
+  ]) };
 
-async function fetchPaginated<T>(firstUrl: string, headers: Record<string, string>, label: string, maxPages = 5): Promise<T[]> {
-  const out: T[] = [];
-  let url: string | null = firstUrl;
-  for (let page = 0; url && page < maxPages; page++) {
-    const requestHeaders = { ...headers };
-    const etagKey = `github_etag:${label}:${page}:${url.split('?')[0]}:${new URL(url).searchParams.get('q') ?? ''}`;
-    const etag = currentDiscoveryEnv ? await readSetting(currentDiscoveryEnv, etagKey) : null;
-    if (etag) requestHeaders['If-None-Match'] = etag;
-    const res = await fetch(url, { headers: requestHeaders });
-    if (res.status === 304) {
-      lastUnchangedSnapshotEndpoints.add(label);
-      return [];
+  async function fetchPaginated<T>(firstUrl: string, headers: Record<string, string>, label: string, maxPages = 5): Promise<{ items: T[]; complete: boolean }> {
+    const out: T[] = [];
+    let complete = true;
+    let url: string | null = firstUrl;
+    for (let page = 0; url && page < maxPages; page++) {
+      const requestHeaders = { ...headers };
+      const etagKey = `github_etag:${label}:${page}:${url.split('?')[0]}:${new URL(url).searchParams.get('q') ?? ''}`;
+      const etag = currentDiscoveryEnv ? await readSetting(currentDiscoveryEnv, etagKey) : null;
+      if (etag) requestHeaders['If-None-Match'] = etag;
+      const res = await fetch(url, { headers: requestHeaders });
+      if (res.status === 304) {
+        lastUnchangedSnapshotEndpoints.add(label);
+        return { items: [], complete: false };
+      }
+      if (!res.ok) throw new Error(`${label} failed: ${res.status}`);
+      const nextEtag = res.headers.get('etag');
+      if (nextEtag && currentDiscoveryEnv) await writeSetting(currentDiscoveryEnv, etagKey, nextEtag);
+      const json = await res.json<any>();
+      if (!Array.isArray(json) && json.incomplete_results === true) complete = false;
+      out.push(...(Array.isArray(json) ? json : json.items ?? json.check_runs ?? json.workflow_runs ?? json.alerts ?? []));
+      url = nextLink(res.headers.get('link'));
     }
-    if (!res.ok) throw new Error(`${label} failed: ${res.status}`);
-    const nextEtag = res.headers.get('etag');
-    if (nextEtag && currentDiscoveryEnv) await writeSetting(currentDiscoveryEnv, etagKey, nextEtag);
-    const json = await res.json<any>();
-    out.push(...(Array.isArray(json) ? json : json.items ?? json.check_runs ?? json.workflow_runs ?? json.alerts ?? []));
-    url = nextLink(res.headers.get('link'));
+    return { items: out, complete: complete && url === null };
   }
-  return out;
-}
 
-async function searchIssues(headers: Record<string, string>, endpoint: string, query: string) {
-  return fetchPaginated<any>(`https://api.github.com/search/issues?q=${encodeURIComponent(query)}&sort=updated&order=desc&per_page=100`, headers, endpoint);
-}
-
-async function snapshotSearch(headers: Record<string, string>, endpoint: string, query: string) {
-  const items = await searchIssues(headers, endpoint, query);
-  lastSuccessfulSnapshotEndpoints.add(endpoint);
-  return items;
-}
-
-async function safeSnapshotSearch(headers: Record<string, string>, endpoint: string, query: string) {
-  try { return await snapshotSearch(headers, endpoint, query); } catch { return []; }
-}
-
-async function snapshotFetch<T>(firstUrl: string, headers: Record<string, string>, label: string, endpoint: string, maxPages = 2): Promise<T[]> {
-  const items = await fetchPaginated<T>(firstUrl, headers, label, maxPages);
-  lastSuccessfulSnapshotEndpoints.add(endpoint);
-  return items;
-}
-
-async function safeSnapshotFetch<T>(firstUrl: string, headers: Record<string, string>, label: string, endpoint: string, maxPages = 2): Promise<T[]> {
-  try { return await snapshotFetch<T>(firstUrl, headers, label, endpoint, maxPages); } catch { return []; }
-}
-
-async function safeFetchPaginated<T>(firstUrl: string, headers: Record<string, string>, label: string, maxPages = 2): Promise<T[]> {
-  try { return await fetchPaginated<T>(firstUrl, headers, label, maxPages); } catch { return []; }
-}
-
-async function enrichPullRequests(headers: Record<string, string>, prs: any[], ownerLogin: string) {
-  return Promise.all(prs.map(async (item) => {
-    if (!item.pull_request?.url) return item;
-    try {
-      const pr = await fetchJson<any>(item.pull_request.url, headers);
-      const reviews = await safeFetchPaginated<any>(`${item.pull_request.url}/reviews?per_page=100`, headers, 'PR reviews', 1);
-      const statuses = pr.statuses_url ? await safeFetchPaginated<any>(pr.statuses_url, headers, 'PR statuses', 1) : [];
-      const checkRuns = pr.head?.repo?.full_name && pr.head?.sha ? await safeFetchPaginated<any>(`https://api.github.com/repos/${pr.head.repo.full_name}/commits/${pr.head.sha}/check-runs?per_page=100`, { ...headers, Accept: 'application/vnd.github+json' }, 'PR check runs', 1) : [];
-      const latestReviewState = reviews.at(-1)?.state;
-      const checks = checkRuns.some((r) => ['failure', 'timed_out', 'cancelled', 'action_required'].includes(String(r.conclusion))) || statuses.some((s) => ['failure', 'error'].includes(String(s.state))) ? 'failure' : checkRuns.some((r) => !r.conclusion || String(r.status) !== 'completed') || statuses.some((s) => String(s.state) === 'pending') ? 'pending' : checkRuns.length || statuses.length ? 'success' : item.checks;
-      return { ...item, mergeable: pr.mergeable === false || pr.mergeable_state === 'dirty' ? 'conflicting' : pr.mergeable === true ? 'mergeable' : 'unknown', checks, checkRunCount: checkRuns.length, latestReviewState, hasVerificationSummary: hasVerificationText(`${item.body ?? ''}\n${pr.body ?? ''}`), user: item.user ?? { login: ownerLogin } };
-    } catch { return item; }
-  }));
-}
-
-async function discoverRepoAlerts(runId: string, headers: Record<string, string>, repos: any[], ownerLogin: string): Promise<GitHubChange[]> {
-  const out: GitHubChange[] = [];
-  for (const repo of repos) {
-    const fullName = String(repo.full_name ?? '');
-    if (!fullName || String(repo.owner?.login ?? '').toLowerCase() !== ownerLogin.toLowerCase()) continue;
-    const [runs, dependabot, codeScanning, secretScanning] = await Promise.all([
-      safeSnapshotFetch<any>(`https://api.github.com/repos/${fullName}/actions/runs?status=failure&per_page=5`, headers, 'workflow runs', 'actions/workflow-failure', 1),
-      safeSnapshotFetch<any>(`https://api.github.com/repos/${fullName}/dependabot/alerts?state=open&per_page=5`, headers, 'dependabot alerts', 'security/dependabot', 1),
-      safeSnapshotFetch<any>(`https://api.github.com/repos/${fullName}/code-scanning/alerts?state=open&per_page=5`, headers, 'code scanning alerts', 'security/code-scanning', 1),
-      safeSnapshotFetch<any>(`https://api.github.com/repos/${fullName}/secret-scanning/alerts?state=open&per_page=5`, headers, 'secret scanning alerts', 'security/secret-scanning', 1),
-    ]);
-    out.push(...runs.map((run) => repoAlertChange(runId, fullName, 'actions/workflow-failure', `Failed workflow run: ${run.name ?? run.display_title ?? fullName}`, run.html_url, run.updated_at ?? run.created_at, { reason: 'ci_activity', checks: 'failure' })));
-    out.push(...dependabot.map((alert) => repoAlertChange(runId, fullName, 'security/dependabot', `Dependabot alert: ${alert.security_advisory?.summary ?? alert.dependency?.package?.name ?? fullName}`, alert.html_url, alert.updated_at ?? alert.created_at, { reason: 'security_alert' })));
-    out.push(...codeScanning.map((alert) => repoAlertChange(runId, fullName, 'security/code-scanning', `Code scanning alert: ${alert.rule?.description ?? alert.rule?.id ?? fullName}`, alert.html_url, alert.updated_at ?? alert.created_at, { reason: 'security_alert' })));
-    out.push(...secretScanning.map((alert) => repoAlertChange(runId, fullName, 'security/secret-scanning', `Secret scanning alert: ${alert.secret_type_display_name ?? alert.secret_type ?? fullName}`, alert.html_url, alert.updated_at ?? alert.created_at, { reason: 'security_alert' })));
+  async function searchIssues(headers: Record<string, string>, endpoint: string, query: string) {
+    return fetchPaginated<any>(`https://api.github.com/search/issues?q=${encodeURIComponent(query)}&sort=updated&order=desc&per_page=100`, headers, endpoint);
   }
-  return out;
-}
+
+  async function snapshotSearch(headers: Record<string, string>, endpoint: string, query: string) {
+    const { items, complete } = await searchIssues(headers, endpoint, query);
+    if (complete) lastSuccessfulSnapshotEndpoints.add(endpoint);
+    return items;
+  }
+
+  async function safeSnapshotSearch(headers: Record<string, string>, endpoint: string, query: string) {
+    try { return await snapshotSearch(headers, endpoint, query); } catch { return []; }
+  }
+
+  async function snapshotFetch<T>(firstUrl: string, headers: Record<string, string>, label: string, endpoint: string, maxPages = 2, repository?: string): Promise<T[]> {
+    const { items, complete } = await fetchPaginated<T>(firstUrl, headers, label, maxPages);
+    if (complete) lastSuccessfulSnapshotEndpoints.add(repository ? endpoint + '@' + repository : endpoint);
+    return items;
+  }
+
+  async function safeSnapshotFetch<T>(firstUrl: string, headers: Record<string, string>, label: string, endpoint: string, maxPages = 2, repository?: string): Promise<T[]> {
+    try { return await snapshotFetch<T>(firstUrl, headers, label, endpoint, maxPages, repository); } catch { return []; }
+  }
+
+  async function safeFetchPaginated<T>(firstUrl: string, headers: Record<string, string>, label: string, maxPages = 2): Promise<T[]> {
+    try { return (await fetchPaginated<T>(firstUrl, headers, label, maxPages)).items; } catch { return []; }
+  }
+
+  async function enrichPullRequests(headers: Record<string, string>, prs: any[], ownerLogin: string) {
+    return Promise.all(prs.map(async (item) => {
+      if (!item.pull_request?.url) return item;
+      try {
+        const pr = await fetchJson<any>(item.pull_request.url, headers);
+        const reviews = await safeFetchPaginated<any>(`${item.pull_request.url}/reviews?per_page=100`, headers, 'PR reviews', 1);
+        const statuses = pr.statuses_url ? await safeFetchPaginated<any>(pr.statuses_url, headers, 'PR statuses', 1) : [];
+        const checkRuns = pr.head?.repo?.full_name && pr.head?.sha ? await safeFetchPaginated<any>(`https://api.github.com/repos/${pr.head.repo.full_name}/commits/${pr.head.sha}/check-runs?per_page=100`, { ...headers, Accept: 'application/vnd.github+json' }, 'PR check runs', 1) : [];
+        const latestReviewState = reviews.at(-1)?.state;
+        const checks = checkRuns.some((r) => ['failure', 'timed_out', 'cancelled', 'action_required'].includes(String(r.conclusion))) || statuses.some((s) => ['failure', 'error'].includes(String(s.state))) ? 'failure' : checkRuns.some((r) => !r.conclusion || String(r.status) !== 'completed') || statuses.some((s) => String(s.state) === 'pending') ? 'pending' : checkRuns.length || statuses.length ? 'success' : item.checks;
+        return { ...item, mergeable: pr.mergeable === false || pr.mergeable_state === 'dirty' ? 'conflicting' : pr.mergeable === true ? 'mergeable' : 'unknown', checks, checkRunCount: checkRuns.length, latestReviewState, hasVerificationSummary: hasVerificationText(`${item.body ?? ''}\n${pr.body ?? ''}`), user: item.user ?? { login: ownerLogin } };
+      } catch { return item; }
+    }));
+  }
+
+  async function discoverRepoAlerts(runId: string, headers: Record<string, string>, repos: any[], ownerLogin: string): Promise<GitHubChange[]> {
+    const out: GitHubChange[] = [];
+    for (const repo of repos) {
+      const fullName = String(repo.full_name ?? '');
+      if (!fullName || String(repo.owner?.login ?? '').toLowerCase() !== ownerLogin.toLowerCase()) continue;
+      const [runs, dependabot, codeScanning, secretScanning] = await Promise.all([
+        safeSnapshotFetch<any>(`https://api.github.com/repos/${fullName}/actions/runs?status=failure&per_page=5`, headers, 'workflow runs', 'actions/workflow-failure', 1, fullName),
+        safeSnapshotFetch<any>(`https://api.github.com/repos/${fullName}/dependabot/alerts?state=open&per_page=5`, headers, 'dependabot alerts', 'security/dependabot', 1, fullName),
+        safeSnapshotFetch<any>(`https://api.github.com/repos/${fullName}/code-scanning/alerts?state=open&per_page=5`, headers, 'code scanning alerts', 'security/code-scanning', 1, fullName),
+        safeSnapshotFetch<any>(`https://api.github.com/repos/${fullName}/secret-scanning/alerts?state=open&per_page=5`, headers, 'secret scanning alerts', 'security/secret-scanning', 1, fullName),
+      ]);
+      out.push(...runs.map((run) => repoAlertChange(runId, fullName, 'actions/workflow-failure', `Failed workflow run: ${run.name ?? run.display_title ?? fullName}`, run.html_url, run.updated_at ?? run.created_at, { reason: 'ci_activity', checks: 'failure' })));
+      out.push(...dependabot.map((alert) => repoAlertChange(runId, fullName, 'security/dependabot', `Dependabot alert: ${alert.security_advisory?.summary ?? alert.dependency?.package?.name ?? fullName}`, alert.html_url, alert.updated_at ?? alert.created_at, { reason: 'security_alert' })));
+      out.push(...codeScanning.map((alert) => repoAlertChange(runId, fullName, 'security/code-scanning', `Code scanning alert: ${alert.rule?.description ?? alert.rule?.id ?? fullName}`, alert.html_url, alert.updated_at ?? alert.created_at, { reason: 'security_alert' })));
+      out.push(...secretScanning.map((alert) => repoAlertChange(runId, fullName, 'security/secret-scanning', `Secret scanning alert: ${alert.secret_type_display_name ?? alert.secret_type ?? fullName}`, alert.html_url, alert.updated_at ?? alert.created_at, { reason: 'security_alert' })));
+    }
+    return out;
+  }
+
+} // Per-discovery helpers capture this scan's environment and snapshot evidence.
 
 async function fetchJson<T>(url: string, headers: Record<string, string>): Promise<T> {
   const res = await fetch(url, { headers });

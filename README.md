@@ -125,6 +125,8 @@ When resolving conflicts, preserve your fork's deployment-specific Cloudflare co
 
 ## Local ship-readiness check
 
+CI (`.github/workflows/ci.yml`) runs `npm run verify`, including the browser project, and `npm run build` on every pull request and every push to `main`, so a fork starts from a verified `main`.
+
 A single command runs the full pre-deploy verification on a fresh checkout:
 
 ```bash
@@ -134,7 +136,7 @@ npm run ship-check
 
 It executes, stopping on the first failure:
 
-1. Playwright Chromium install (skipped if already present — needed for the browser E2E)
+1. `npx playwright install chromium` — needed for the browser E2E; a quick no-op when the Chromium revision this Playwright version needs is already installed
 2. `wrangler types` — regenerates `worker-configuration.d.ts` from `wrangler.jsonc`
 3. `tsc --noEmit` — strict TypeScript check
 4. `vite build` — production client + worker build

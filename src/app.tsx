@@ -460,7 +460,12 @@ async function readSetting(db: D1Database, key: string) {
 async function readRefreshSummary(db: D1Database) {
   const row = await db.prepare("SELECT value FROM settings WHERE key = 'last_refresh_summary'").first<Record<string, string>>();
   if (!row?.value) return null;
-  try { return JSON.parse(row.value); } catch { return null; }
+  try {
+    const summary = JSON.parse(row.value);
+    // Reconciliation identity is private scanner state, not Inertia page data.
+    delete summary.snapshotSignature;
+    return summary;
+  } catch { return null; }
 }
 
 async function readSettings(db: D1Database): Promise<UserSettings> {

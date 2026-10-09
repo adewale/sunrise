@@ -1,8 +1,8 @@
 import { env } from 'cloudflare:test';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dedupeChanges, runDiscovery } from '../src/scanner';
-import type { GitHubChange } from '../src/types';
+import { dedupeChanges, processGithubChange, runDiscovery } from '../src/scanner';
+import type { GitHubChange, QueueMessage } from '../src/types';
 
 const sourceEndpointArbitrary = fc.constantFrom(
   'notifications',
@@ -212,13 +212,18 @@ describe('GitHub discovery', () => {
     expect(JSON.parse(items.results[0].evidence_json).notificationReason).toBe('subscribed');
   });
 
-  it('removes snapshot-backed action items after GitHub no longer returns them', async () => {
+  it('reconciles only complete snapshots in the repository actually scanned', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
-      if (u.includes('/notifications')) return Response.json([]);
-      if (u.includes('/search/issues')) return search([]);
+      if (u.includes('/notifications')) return Response.json([notification('mention', 'New mention', 'https://api.github.com/repos/o/r/issues/10', '2026-05-01T10:00:00Z')]);
+      if (u.includes('/search/issues')) return Response.json({ items: [], incomplete_results: (new URL(u).searchParams.get('q') ?? '').includes('assignee:ade') });
       if (u.includes('/user/repository_invitations')) return Response.json([]);
       if (u.includes('/user/memberships/orgs')) return Response.json([]);
+      if (u.includes('/user/repos?')) return Response.json([
+        { full_name: 'ade/a', owner: { login: 'ade' } },
+        { full_name: 'ade/b', owner: { login: 'ade' } },
+      ]);
+      if (u.includes('/repos/ade/b/dependabot')) return new Response(null, { status: 304 });
       return Response.json([]);
     }));
     const stale = [
@@ -228,10 +233,13 @@ describe('GitHub discovery', () => {
       ['old-authored', 'github:o/r/pull/3', 'authored_pr_pending', 'Authored PR', 'https://github.com/o/r/pull/3'],
       ['old-created', 'github:o/r/issues/4', 'maintenance', 'Created issue', 'https://github.com/o/r/issues/4'],
       ['old-repo-pr', 'github:ade/r/pull/5', 'repo_pr', 'Repo PR', 'https://github.com/ade/r/pull/5'],
+      ['closed-alert', 'alert:a', 'security_alert', 'Resolved alert', 'https://github.com/ade/a', 'ade/a'],
+      ['cached-alert', 'alert:b', 'security_alert', 'Cached alert', 'https://github.com/ade/b', 'ade/b'],
+      ['unscanned-alert', 'alert:c', 'security_alert', 'Unscanned alert', 'https://github.com/ade/c', 'ade/c'],
     ];
-    for (const [id, key, kind, title, url] of stale) {
+    for (const [id, key, kind, title, url, repo = 'ade/r'] of stale) {
       await env.DB.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
-        .bind(id, key, kind, title, 'ade/r', url, '2026-05-01T00:00:00Z', 'stale', 'act', '{}', 'search').run();
+        .bind(id, key, kind, title, repo, url, '2026-05-01T00:00:00Z', 'stale', 'act', '{}', 'search').run();
     }
     await env.DB.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, evidence_json, source, ignored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)')
       .bind('keep-mention', 'github:o/r/issues/9', 'mention', 'Mention', 'o/r', 'https://github.com/o/r/issues/9', '2026-05-01T00:00:00Z', 'mention', 'reply', '{}', 'notifications').run();
@@ -239,41 +247,66 @@ describe('GitHub discovery', () => {
     await runDiscovery(env, 'manual', 'token');
 
     const items = await env.DB.prepare('SELECT * FROM action_items').all<Record<string, any>>();
-    expect(items.results.map((row) => row.kind)).not.toEqual(expect.arrayContaining(['invitation', 'review_requested', 'assigned', 'authored_pr_pending', 'maintenance', 'repo_pr']));
-    expect(items.results.some((row) => row.kind === 'mention')).toBe(true);
+    expect(items.results.find((row) => row.title === 'New mention')?.kind).toBe('mention');
+    expect(items.results.filter((row) => row.title !== 'New mention').map((row) => row.id).sort()).toEqual(['cached-alert', 'keep-mention', 'old-assigned', 'unscanned-alert']);
   });
 
-  it('skips processing when the GitHub snapshot has not changed', async () => {
+  it('reconciles newly complete empty searches even when other records have not changed', async () => {
+    let incomplete = true;
+    const queued: Extract<QueueMessage, { kind: 'process-github-change' }>[] = [];
+    (env as any).GITHUB_QUEUE = {
+      async sendBatch(batch: { body: Extract<QueueMessage, { kind: 'process-github-change' }> }[]) {
+        for (const { body } of batch) {
+          queued.push(body);
+          await processGithubChange(env, body);
+        }
+      },
+    };
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/notifications')) return Response.json([notification('mention', 'Mentioned thread', 'https://api.github.com/repos/o/r/issues/1', '2026-05-01T10:00:00Z')]);
-      if (u.includes('/search/issues')) return search([]);
+      if (u.includes('/search/issues')) return Response.json({ items: [], incomplete_results: incomplete && (new URL(u).searchParams.get('q') ?? '').includes('assignee:ade') });
       return Response.json([]);
     }));
+    await env.DB.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind('stale-assigned', 'github:o/r/issues/2', 'assigned', 'Resolved assignment', 'o/r', 'https://github.com/o/r/issues/2', '2026-05-01T00:00:00Z', 'assigned', 'act', 'search').run();
     const first = await runDiscovery(env, 'manual', 'token');
+    expect(await env.DB.prepare('SELECT id FROM action_items WHERE id = ?').bind('stale-assigned').first()).not.toBeNull();
+    incomplete = false;
     const second = await runDiscovery(env, 'manual', 'token') as any;
     expect(first.candidateCount).toBe(1);
-    expect(second).toMatchObject({ candidateCount: 0, noChange: true });
-    const runs = await env.DB.prepare('SELECT * FROM scan_runs').all<Record<string, any>>();
-    expect(runs.results.some((run) => run.status === 'no_change')).toBe(true);
+    expect(second).toMatchObject({ candidateCount: 1, noChange: false });
+    const items = await env.DB.prepare('SELECT ai.kind, gc.id AS change_id FROM action_items ai JOIN github_changes gc ON gc.canonical_subject_key = ai.canonical_subject_key').all<{ kind: string; change_id: string }>();
+    expect(items.results.map((row) => row.kind)).toEqual(['mention']);
+    expect(queued.map((message) => message.changeId)).toEqual([items.results[0].change_id, items.results[0].change_id]);
+    const runs = await env.DB.prepare('SELECT candidate_count, processed_count FROM scan_runs').all<{ candidate_count: number; processed_count: number }>();
+    expect(runs.results.map((run) => [run.candidate_count, run.processed_count])).toEqual([[1, 1], [1, 1]]);
   });
 
-  it('uses GitHub ETags to detect an unchanged snapshot early', async () => {
+  it('retains cached review items while processing a changed endpoint', async () => {
     let calls = 0;
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       const u = String(url);
       if (u.includes('/notifications')) {
         calls++;
-        if ((init?.headers as Record<string, string>)?.['If-None-Match']) return new Response(null, { status: 304 });
-        return Response.json([], { headers: { etag: '"notifications-v1"' } });
+        return Response.json(calls > 1 ? [notification('mention', 'New mention', 'https://api.github.com/repos/o/r/issues/99', '2026-05-02T10:00:00Z')] : []);
       }
-      if (u.includes('/search/issues')) return search([]);
+      if (u.includes('/search/issues')) {
+        const query = new URL(u).searchParams.get('q') ?? '';
+        if (query.includes('review-requested:ade')) {
+          if ((init?.headers as Record<string, string>)?.['If-None-Match']) return new Response(null, { status: 304 });
+          return Response.json({ items: [issue('Review me', 'https://github.com/o/r/pull/3', '2026-05-01T12:00:00Z', 'teammate')] }, { headers: { etag: '"reviews-v1"' } });
+        }
+        return search([]);
+      }
       return Response.json([]);
     }));
     await runDiscovery(env, 'manual', 'token');
     const second = await runDiscovery(env, 'manual', 'token') as any;
-    expect(calls).toBeGreaterThan(1);
-    expect(second.noChange).toBe(true);
+    expect(calls).toBe(2);
+    expect(second).toMatchObject({ candidateCount: 1, noChange: false });
+    const items = await env.DB.prepare('SELECT kind FROM action_items').all<{ kind: string }>();
+    expect(items.results.map((row) => row.kind).sort()).toEqual(['mention', 'review_requested']);
   });
 
   it('uses sendBatch when a queue binding is available', async () => {

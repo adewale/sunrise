@@ -557,6 +557,8 @@ A 304 response supplies no replacement list. Exclude cached and pagination-trunc
 
 GitHub search can also return HTTP 200 with `incomplete_results: true`; that is not evidence of absence. Scope repository-alert completeness to the repository actually fetched: a successful request for repository A cannot resolve cached, failed or unscanned alerts in B. Snapshot evidence and its environment must belong to one discovery invocation, not module globals shared by overlapping scans. Strengthen existing changed-scan scenarios to distinguish these cases without another API call or campaign.
 
+Completeness is part of snapshot identity, not just a deletion guard. A stable unrelated mention can otherwise make an incomplete-to-complete empty search look unchanged forever, leaving a resolved assignment on the dashboard. Remember sorted complete endpoint/repository scopes with the records in the already-written refresh summary; even partial/cached scans replace that evidence, so an old full signature cannot suppress recovery. This replaces the separate signature write rather than adding persistence work. Only an entirely cached scan with no complete scopes may take the no-record shortcut; cached data from one endpoint cannot suppress reconciliation of another complete empty endpoint.
+
 ## 38. Stronger checks need not add another verification lane
 
 The browser project's setup already builds the app; a second CI build duplicates that work. Pure retry/version checks belong in its existing Node environment, without D1 resets and migrations. Advance retry timers virtually, keep the existing CI job and discovery-property budgets, and strengthen assertions within existing scenarios before adding campaigns.

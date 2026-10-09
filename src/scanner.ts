@@ -14,8 +14,9 @@ export async function runDiscovery(env: Env, trigger: 'cron' | 'manual' = 'manua
       ? { changes: fixtureChanges(runId, env.OWNER_LOGIN ?? 'owner'), successful: new Set<string>(), unchanged: new Set<string>() }
       : await discoverFromGitHub(runId, accessToken, env.OWNER_LOGIN ?? '', env);
     const changes = await filterBySettings(env, snapshot.changes);
-    if (await snapshotUnchanged(env, changes, snapshot.unchanged)) {
-      await writeRefreshSummary(env, { status: 'no_change', candidateCount: 0, resolvedCount: 0 });
+    const signature = snapshotSignature(changes, snapshot.successful);
+    if (await snapshotUnchanged(env, changes, snapshot.unchanged, snapshot.successful, signature)) {
+      await writeRefreshSummary(env, { status: 'no_change', candidateCount: 0, resolvedCount: 0, snapshotSignature: signature });
       await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('no_change', new Date().toISOString(), 0, runId).run());
       return { runId, candidateCount: 0, noChange: true };
     }
@@ -25,8 +26,7 @@ export async function runDiscovery(env: Env, trigger: 'cron' | 'manual' = 'manua
     await enqueueChanges(env, messages);
     await reconcileResolvedActionItems(env, changes, snapshot.successful);
     const afterKeys = await currentActionItemKeys(env);
-    await writeSnapshotSignature(env, changes, snapshot.unchanged);
-    await writeRefreshSummary(env, { status: 'changed', candidateCount: changes.length, resolvedCount: [...beforeKeys].filter((key) => !afterKeys.has(key)).length });
+    await writeRefreshSummary(env, { status: 'changed', candidateCount: changes.length, resolvedCount: [...beforeKeys].filter((key) => !afterKeys.has(key)).length, snapshotSignature: signature });
     await retryD1(() => env.DB.prepare('UPDATE scan_runs SET status = ?, completed_at = ?, candidate_count = ? WHERE id = ?').bind('succeeded', new Date().toISOString(), changes.length, runId).run());
     return { runId, candidateCount: changes.length, noChange: false };
   } catch (error) {
@@ -41,20 +41,22 @@ async function filterBySettings(env: Env, changes: GitHubChange[]) {
   return changes.filter((change) => !(change.sourceEndpoint === 'notifications' && String(change.raw?.reason ?? '').toLowerCase() === 'subscribed'));
 }
 
-async function snapshotUnchanged(env: Env, changes: GitHubChange[], lastUnchangedSnapshotEndpoints: Set<string>) {
-  if (changes.length === 0 && lastUnchangedSnapshotEndpoints.size > 0) return true;
+async function snapshotUnchanged(env: Env, changes: GitHubChange[], lastUnchangedSnapshotEndpoints: Set<string>, successfulSnapshots: Set<string>, signature: string) {
+  // A cached scope says nothing about another scope that supplied a complete
+  // empty response. Reconcile those scopes even if no current records arrived.
+  if (changes.length === 0 && lastUnchangedSnapshotEndpoints.size > 0 && successfulSnapshots.size === 0) return true;
   if (lastUnchangedSnapshotEndpoints.size > 0) return false;
-  const signature = snapshotSignature(changes);
-  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'github_snapshot_signature'").first<Record<string, string>>();
-  return Boolean(row?.value) && row?.value === signature;
+  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'last_refresh_summary'").first<Record<string, string>>();
+  try {
+    return Boolean(row?.value) && JSON.parse(row!.value).snapshotSignature === signature;
+  } catch {
+    return false;
+  }
 }
 
-async function writeSnapshotSignature(env: Env, changes: GitHubChange[], lastUnchangedSnapshotEndpoints: Set<string>) {
-  if (lastUnchangedSnapshotEndpoints.size > 0) return;
-  await writeSetting(env, 'github_snapshot_signature', snapshotSignature(changes));
-}
-
-async function writeRefreshSummary(env: Env, summary: { status: string; candidateCount: number; resolvedCount: number }) {
+async function writeRefreshSummary(env: Env, summary: { status: string; candidateCount: number; resolvedCount: number; snapshotSignature: string }) {
+  // The existing summary write also remembers partial/cached scans. A separate
+  // full-snapshot setting would retain stale evidence across those scans.
   await writeSetting(env, 'last_refresh_summary', JSON.stringify({ ...summary, updatedAt: new Date().toISOString() }));
 }
 
@@ -68,8 +70,11 @@ async function readSetting(env: Env, key: string) {
   return row?.value ?? null;
 }
 
-function snapshotSignature(changes: GitHubChange[]) {
-  return changes.map((change) => `${change.sourceEndpoint}|${change.canonicalSubjectKey}|${change.updatedAt}`).sort().join('\n');
+function snapshotSignature(changes: GitHubChange[], successfulSnapshots: Set<string>) {
+  return JSON.stringify({
+    changes: changes.map((change) => `${change.sourceEndpoint}|${change.canonicalSubjectKey}|${change.updatedAt}`).sort(),
+    complete: [...successfulSnapshots].sort(),
+  });
 }
 
 async function currentActionItemKeys(env: Env) {

@@ -251,19 +251,24 @@ describe('GitHub discovery', () => {
     expect(items.results.filter((row) => row.title !== 'New mention').map((row) => row.id).sort()).toEqual(['cached-alert', 'keep-mention', 'old-assigned', 'unscanned-alert']);
   });
 
-  it('skips processing when the GitHub snapshot has not changed', async () => {
+  it('reconciles newly complete empty searches even when other records have not changed', async () => {
+    let incomplete = true;
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/notifications')) return Response.json([notification('mention', 'Mentioned thread', 'https://api.github.com/repos/o/r/issues/1', '2026-05-01T10:00:00Z')]);
-      if (u.includes('/search/issues')) return search([]);
+      if (u.includes('/search/issues')) return Response.json({ items: [], incomplete_results: incomplete && (new URL(u).searchParams.get('q') ?? '').includes('assignee:ade') });
       return Response.json([]);
     }));
+    await env.DB.prepare('INSERT INTO action_items (id, canonical_subject_key, kind, title, repo, url, updated_at, reason, suggested_action, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind('stale-assigned', 'github:o/r/issues/2', 'assigned', 'Resolved assignment', 'o/r', 'https://github.com/o/r/issues/2', '2026-05-01T00:00:00Z', 'assigned', 'act', 'search').run();
     const first = await runDiscovery(env, 'manual', 'token');
+    expect(await env.DB.prepare('SELECT id FROM action_items WHERE id = ?').bind('stale-assigned').first()).not.toBeNull();
+    incomplete = false;
     const second = await runDiscovery(env, 'manual', 'token') as any;
     expect(first.candidateCount).toBe(1);
-    expect(second).toMatchObject({ candidateCount: 0, noChange: true });
-    const runs = await env.DB.prepare('SELECT * FROM scan_runs').all<Record<string, any>>();
-    expect(runs.results.some((run) => run.status === 'no_change')).toBe(true);
+    expect(second).toMatchObject({ candidateCount: 1, noChange: false });
+    const items = await env.DB.prepare('SELECT kind FROM action_items').all<{ kind: string }>();
+    expect(items.results.map((row) => row.kind)).toEqual(['mention']);
   });
 
   it('retains cached review items while processing a changed endpoint', async () => {

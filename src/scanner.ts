@@ -83,11 +83,14 @@ async function currentActionItemKeys(env: Env) {
 }
 
 async function persistChange(env: Env, change: GitHubChange): Promise<ProcessGitHubChangeMessage> {
-  await retryD1(() => env.DB.prepare(`INSERT INTO github_changes (id, run_id, canonical_subject_key, source_endpoint, repo, subject_type, subject_url, html_url, updated_at, raw_json, first_seen_at, last_seen_at, processing_status, attempt_count)
+  const persisted = await retryD1(() => env.DB.prepare(`INSERT INTO github_changes (id, run_id, canonical_subject_key, source_endpoint, repo, subject_type, subject_url, html_url, updated_at, raw_json, first_seen_at, last_seen_at, processing_status, attempt_count)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)
-    ON CONFLICT(canonical_subject_key, source_endpoint, updated_at) DO UPDATE SET run_id = excluded.run_id, raw_json = excluded.raw_json, last_seen_at = excluded.last_seen_at, processing_status = 'pending'`)
-    .bind(change.id, change.runId, change.canonicalSubjectKey, change.sourceEndpoint, change.repo, change.subjectType, change.subjectUrl, change.htmlUrl, change.updatedAt, JSON.stringify(change.raw), new Date().toISOString(), new Date().toISOString()).run());
-  return { kind: 'process-github-change', runId: change.runId, changeId: change.id };
+    ON CONFLICT(canonical_subject_key, source_endpoint, updated_at) DO UPDATE SET run_id = excluded.run_id, raw_json = excluded.raw_json, last_seen_at = excluded.last_seen_at, processing_status = 'pending'
+    RETURNING id`)
+    .bind(change.id, change.runId, change.canonicalSubjectKey, change.sourceEndpoint, change.repo, change.subjectType, change.subjectUrl, change.htmlUrl, change.updatedAt, JSON.stringify(change.raw), new Date().toISOString(), new Date().toISOString()).first<{ id: string }>());
+  if (!persisted) throw new Error('Persisted GitHub change did not return its identity');
+  // A conflict retains the existing UUID, including messages already in flight.
+  return { kind: 'process-github-change', runId: change.runId, changeId: persisted.id };
 }
 
 async function enqueueChanges(env: Env, messages: ProcessGitHubChangeMessage[]) {

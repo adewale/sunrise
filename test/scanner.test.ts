@@ -1,8 +1,8 @@
 import { env } from 'cloudflare:test';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dedupeChanges, runDiscovery } from '../src/scanner';
-import type { GitHubChange } from '../src/types';
+import { dedupeChanges, processGithubChange, runDiscovery } from '../src/scanner';
+import type { GitHubChange, QueueMessage } from '../src/types';
 
 const sourceEndpointArbitrary = fc.constantFrom(
   'notifications',
@@ -253,6 +253,15 @@ describe('GitHub discovery', () => {
 
   it('reconciles newly complete empty searches even when other records have not changed', async () => {
     let incomplete = true;
+    const queued: Extract<QueueMessage, { kind: 'process-github-change' }>[] = [];
+    (env as any).GITHUB_QUEUE = {
+      async sendBatch(batch: { body: Extract<QueueMessage, { kind: 'process-github-change' }> }[]) {
+        for (const { body } of batch) {
+          queued.push(body);
+          await processGithubChange(env, body);
+        }
+      },
+    };
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/notifications')) return Response.json([notification('mention', 'Mentioned thread', 'https://api.github.com/repos/o/r/issues/1', '2026-05-01T10:00:00Z')]);
@@ -267,8 +276,11 @@ describe('GitHub discovery', () => {
     const second = await runDiscovery(env, 'manual', 'token') as any;
     expect(first.candidateCount).toBe(1);
     expect(second).toMatchObject({ candidateCount: 1, noChange: false });
-    const items = await env.DB.prepare('SELECT kind FROM action_items').all<{ kind: string }>();
+    const items = await env.DB.prepare('SELECT ai.kind, gc.id AS change_id FROM action_items ai JOIN github_changes gc ON gc.canonical_subject_key = ai.canonical_subject_key').all<{ kind: string; change_id: string }>();
     expect(items.results.map((row) => row.kind)).toEqual(['mention']);
+    expect(queued.map((message) => message.changeId)).toEqual([items.results[0].change_id, items.results[0].change_id]);
+    const runs = await env.DB.prepare('SELECT candidate_count, processed_count FROM scan_runs').all<{ candidate_count: number; processed_count: number }>();
+    expect(runs.results.map((run) => [run.candidate_count, run.processed_count])).toEqual([[1, 1], [1, 1]]);
   });
 
   it('retains cached review items while processing a changed endpoint', async () => {

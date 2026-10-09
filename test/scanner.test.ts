@@ -258,22 +258,30 @@ describe('GitHub discovery', () => {
     expect(runs.results.some((run) => run.status === 'no_change')).toBe(true);
   });
 
-  it('uses GitHub ETags to detect an unchanged snapshot early', async () => {
+  it('retains cached review items while processing a changed endpoint', async () => {
     let calls = 0;
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       const u = String(url);
       if (u.includes('/notifications')) {
         calls++;
-        if ((init?.headers as Record<string, string>)?.['If-None-Match']) return new Response(null, { status: 304 });
-        return Response.json([], { headers: { etag: '"notifications-v1"' } });
+        return Response.json(calls > 1 ? [notification('mention', 'New mention', 'https://api.github.com/repos/o/r/issues/99', '2026-05-02T10:00:00Z')] : []);
       }
-      if (u.includes('/search/issues')) return search([]);
+      if (u.includes('/search/issues')) {
+        const query = new URL(u).searchParams.get('q') ?? '';
+        if (query.includes('review-requested:ade')) {
+          if ((init?.headers as Record<string, string>)?.['If-None-Match']) return new Response(null, { status: 304 });
+          return Response.json({ items: [issue('Review me', 'https://github.com/o/r/pull/3', '2026-05-01T12:00:00Z', 'teammate')] }, { headers: { etag: '"reviews-v1"' } });
+        }
+        return search([]);
+      }
       return Response.json([]);
     }));
     await runDiscovery(env, 'manual', 'token');
     const second = await runDiscovery(env, 'manual', 'token') as any;
-    expect(calls).toBeGreaterThan(1);
-    expect(second.noChange).toBe(true);
+    expect(calls).toBe(2);
+    expect(second).toMatchObject({ candidateCount: 1, noChange: false });
+    const items = await env.DB.prepare('SELECT kind FROM action_items').all<{ kind: string }>();
+    expect(items.results.map((row) => row.kind).sort()).toEqual(['mention', 'review_requested']);
   });
 
   it('uses sendBatch when a queue binding is available', async () => {

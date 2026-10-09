@@ -157,7 +157,9 @@ async function reconcileResolvedActionItems(env: Env, changes: GitHubChange[], s
     { endpoints: ['security/dependabot', 'security/code-scanning', 'security/secret-scanning'], kinds: ['security_alert'] },
   ];
   for (const rule of rules) {
-    if (!rule.endpoints.some((endpoint) => successfulSnapshots.has(endpoint))) continue;
+    // An empty/partial response cannot prove that a previously observed item
+    // disappeared. In particular, 304 is a cache hit, not an empty snapshot.
+    if (!rule.endpoints.every((endpoint) => successfulSnapshots.has(endpoint))) continue;
     const liveKeys = new Set(changes.filter((change) => rule.endpoints.includes(change.sourceEndpoint)).map((change) => change.canonicalSubjectKey));
     const existing = await env.DB.prepare(`SELECT * FROM action_items WHERE kind IN (${rule.kinds.map(() => '?').join(',')})`).bind(...rule.kinds).all<Record<string, any>>();
     for (const row of existing.results) {
@@ -204,7 +206,7 @@ async function discoverFromGitHub(runId: string, token: string, ownerLogin: stri
   ]);
 }
 
-async function fetchPaginated<T>(firstUrl: string, headers: Record<string, string>, label: string, maxPages = 5): Promise<T[]> {
+async function fetchPaginated<T>(firstUrl: string, headers: Record<string, string>, label: string, maxPages = 5): Promise<{ items: T[]; complete: boolean }> {
   const out: T[] = [];
   let url: string | null = firstUrl;
   for (let page = 0; url && page < maxPages; page++) {
@@ -215,7 +217,7 @@ async function fetchPaginated<T>(firstUrl: string, headers: Record<string, strin
     const res = await fetch(url, { headers: requestHeaders });
     if (res.status === 304) {
       lastUnchangedSnapshotEndpoints.add(label);
-      return [];
+      return { items: [], complete: false };
     }
     if (!res.ok) throw new Error(`${label} failed: ${res.status}`);
     const nextEtag = res.headers.get('etag');
@@ -224,7 +226,7 @@ async function fetchPaginated<T>(firstUrl: string, headers: Record<string, strin
     out.push(...(Array.isArray(json) ? json : json.items ?? json.check_runs ?? json.workflow_runs ?? json.alerts ?? []));
     url = nextLink(res.headers.get('link'));
   }
-  return out;
+  return { items: out, complete: url === null };
 }
 
 async function searchIssues(headers: Record<string, string>, endpoint: string, query: string) {
@@ -232,8 +234,8 @@ async function searchIssues(headers: Record<string, string>, endpoint: string, q
 }
 
 async function snapshotSearch(headers: Record<string, string>, endpoint: string, query: string) {
-  const items = await searchIssues(headers, endpoint, query);
-  lastSuccessfulSnapshotEndpoints.add(endpoint);
+  const { items, complete } = await searchIssues(headers, endpoint, query);
+  if (complete) lastSuccessfulSnapshotEndpoints.add(endpoint);
   return items;
 }
 
@@ -242,8 +244,8 @@ async function safeSnapshotSearch(headers: Record<string, string>, endpoint: str
 }
 
 async function snapshotFetch<T>(firstUrl: string, headers: Record<string, string>, label: string, endpoint: string, maxPages = 2): Promise<T[]> {
-  const items = await fetchPaginated<T>(firstUrl, headers, label, maxPages);
-  lastSuccessfulSnapshotEndpoints.add(endpoint);
+  const { items, complete } = await fetchPaginated<T>(firstUrl, headers, label, maxPages);
+  if (complete) lastSuccessfulSnapshotEndpoints.add(endpoint);
   return items;
 }
 
@@ -252,7 +254,7 @@ async function safeSnapshotFetch<T>(firstUrl: string, headers: Record<string, st
 }
 
 async function safeFetchPaginated<T>(firstUrl: string, headers: Record<string, string>, label: string, maxPages = 2): Promise<T[]> {
-  try { return await fetchPaginated<T>(firstUrl, headers, label, maxPages); } catch { return []; }
+  try { return (await fetchPaginated<T>(firstUrl, headers, label, maxPages)).items; } catch { return []; }
 }
 
 async function enrichPullRequests(headers: Record<string, string>, prs: any[], ownerLogin: string) {

@@ -23,7 +23,7 @@ export default defineConfig({
         test: {
           name: 'workers',
           include: ['test/**/*.test.ts'],
-          exclude: ['test/e2e-navigation.test.ts', 'test/playwright-smoke.test.ts'],
+          exclude: ['test/e2e-navigation.test.ts', 'test/playwright-smoke.test.ts', 'test/db.test.ts', 'test/version-sync.test.ts'],
           setupFiles: ['test/setup.workers.ts'],
         },
       },
@@ -31,7 +31,9 @@ export default defineConfig({
         test: {
           name: 'browser',
           environment: 'node',
-          include: ['test/e2e-navigation.test.ts', 'test/playwright-smoke.test.ts'],
+          // These pure checks share the already-existing Node project rather
+          // than resetting D1 and applying migrations for every assertion.
+          include: ['test/e2e-navigation.test.ts', 'test/playwright-smoke.test.ts', 'test/db.test.ts', 'test/version-sync.test.ts'],
           globalSetup: ['test/browser-globalSetup.ts'],
           testTimeout: 30000,
         },

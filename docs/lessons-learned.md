@@ -550,3 +550,11 @@ A green suite hid three bugs because the tests didn't faithfully represent reali
 - **Runner fidelity.** A warm developer machine hid two clean-runner requirements: Playwright's package does not install Chromium, and Vite may color the preview URL that test setup parses. Fix: CI explicitly installs Chromium and `test/preview-port.test.ts` pins ANSI-aware parsing of the real preview output.
 
 Rule of thumb: prefer the real engine over a fake; when a test depends on the test environment enforcing a constraint, make sure the environment actually enforces it — otherwise the double becomes a yes-man and the suite reports false green. Also confirm new behavioral guards go *red* with the bug reintroduced, so you know the test can fail.
+
+## 37. A cache hit is not an empty snapshot
+
+A 304 response supplies no replacement list. Exclude cached and pagination-truncated snapshots from destructive reconciliation, and require every endpoint contributing to a shared item kind to be complete. The existing ETag regression now combines a cached review request with a new mention, proving the cached card survives a changed scan without removing conditional requests or adding API traffic.
+
+## 38. Stronger checks need not add another verification lane
+
+The browser project's setup already builds the app; a second CI build duplicates that work. Pure retry/version checks belong in its existing Node environment, without D1 resets and migrations. Advance retry timers virtually, keep the existing CI job and discovery-property budgets, and strengthen assertions within existing scenarios before adding campaigns.
